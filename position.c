@@ -26,7 +26,8 @@ struct smtile {
 	/* Blocked by nerby settlement. */
 	int blocked;
 
-	struct tile *tiles[3];
+	/* One more so that we end with NULL. */
+	struct tile *tiles[4];
 };
 
 /* road tile */
@@ -34,8 +35,8 @@ struct rtile {
 	int player;
 	int road;
 
-	struct smtile *smtiles[2];
-	struct rtile *rtiles[4];
+	struct smtile *smtiles[3];
+	struct rtile *rtiles[5];
 };
 
 struct tile {
@@ -148,32 +149,89 @@ void position_print(struct position *pos) {
 	}
 }
 
+static const int road_settlements[MAX_ROADS][2] = {
+	/* 0 - 5 */
+	{ 0, 3 }, { 0, 4 }, { 1, 4 }, { 1, 5 }, { 2, 5 }, { 2, 6 },
+	/* 6 - 9 */
+	{ 3, 7 }, { 4, 8 }, { 5, 9 }, { 6, 10 },
+	/* 10 - 17 */
+	{ 7, 11 }, { 7, 12 }, { 8, 12 }, { 8, 13 }, { 9, 13 }, { 9, 14 }, { 10, 14 }, { 10, 15 },
+	/* 18 - 22 */
+	{ 11, 16 }, { 12, 17 }, { 13, 18 }, { 14, 19 }, { 15, 20 },
+	/* 23 - 32 */
+	{ 16, 21 }, { 16, 22 }, { 17, 22 }, { 17, 23 }, { 18, 23 }, { 18, 24 }, { 19, 24 }, { 19, 25 }, { 20, 25 }, { 20, 26 },
+	/* 33 - 38 */
+	{ 21, 27 }, { 22, 28 }, { 23, 29 }, { 24, 30 }, { 25, 31 }, { 26, 32 },
+	/* 39 - 48 */
+	{ 27, 33 }, { 28, 33 }, { 28, 34 }, { 29, 34 }, { 29, 35 }, { 30, 35 }, { 30, 36 }, { 31, 36 }, { 31, 37 }, { 32, 37 },
+	/* 49 - 53 */
+	{ 33, 38 }, { 34, 39 }, { 35, 40 }, { 36, 41 }, { 37, 42 },
+	/* 54 - 61 */
+	{ 38, 43 }, { 39, 43 }, { 39, 44 }, { 40, 44 }, { 40, 45 }, { 41, 45 }, { 41, 46 }, { 42, 46 },
+	/* 62 - 65 */
+	{ 43, 47 }, { 44, 48 }, { 45, 49 }, { 46, 50 },
+	/* 66 - 71 */
+	{ 47, 51 }, { 48, 51 }, { 48, 52 }, { 49, 52 }, { 49, 53 }, { 50, 53 },
+};
+
+static const int tile_settlements[MAX_TILES][6] = {
+	{ 0, 3, 4, 7, 8, 12 },
+	{ 1, 4, 5, 8, 9, 13 },
+	{ 2, 5, 6, 9, 10, 14 },
+
+	{ 7, 11, 12, 16, 17, 22 },
+	{ 8, 12, 13, 17, 18, 23 },
+	{ 9, 13, 14, 18, 19, 24 },
+	{ 10, 14, 15, 19, 20, 25 },
+
+	{ 16, 21, 22, 27, 28, 33 },
+	{ 17, 22, 23, 28, 29, 34 },
+	{ 18, 23, 24, 29, 30, 35 },
+	{ 19, 24, 25, 30, 31, 36 },
+	{ 20, 25, 26, 31, 32, 37 },
+
+	{ 28, 33, 34, 38, 39, 43 },
+	{ 29, 34, 35, 39, 40, 44 },
+	{ 30, 35, 36, 40, 41, 45 },
+	{ 31, 36, 37, 41, 42, 46 },
+
+	{ 39, 43, 44, 47, 48, 51 },
+	{ 40, 44, 45, 48, 49, 52 },
+	{ 41, 45, 46, 49, 50, 53 },
+};
+
 void position_init(struct position *pos) {
 	memset(pos, 0, sizeof(*pos));
 
-	pos->smtiles[0].tiles[0] = &pos->tiles[0];
-	pos->smtiles[1].tiles[0] = &pos->tiles[1];
-	pos->smtiles[2].tiles[0] = &pos->tiles[2];
-	pos->smtiles[3].tiles[0] = &pos->tiles[0];
-	pos->smtiles[4].tiles[0] = &pos->tiles[0];
-	pos->smtiles[4].tiles[1] = &pos->tiles[1];
-	pos->smtiles[5].tiles[0] = &pos->tiles[1];
-	pos->smtiles[5].tiles[1] = &pos->tiles[2];
+	for (int t = 0; t < MAX_TILES; t++) {
+		for (int i = 0; i < 6; i++) {
+			struct smtile *smtile = &pos->smtiles[tile_settlements[t][i]];
+			int n = 0;
+			while (smtile->tiles[n])
+				n++;
+			smtile->tiles[n] = &pos->tiles[t];
+		}
+	}
 
+	/* Give each road two settlements, and every other road that
+	 * shares one of those settlements.
+	 */
+	for (int r = 0; r < MAX_ROADS; r++) {
+		struct rtile *rtile = &pos->rtiles[r];
+		const int *ends = road_settlements[r];
 
+		rtile->smtiles[0] = &pos->smtiles[ends[0]];
+		rtile->smtiles[1] = &pos->smtiles[ends[1]];
 
-	pos->rtiles[0].rtiles[0] = &pos->rtiles[1];
-	pos->rtiles[0].rtiles[1] = &pos->rtiles[6];
-	pos->rtiles[1].rtiles[0] = &pos->rtiles[0];
-	pos->rtiles[1].rtiles[1] = &pos->rtiles[2];
-	pos->rtiles[1].rtiles[2] = &pos->rtiles[7];
-
-
-
-	pos->rtiles[0].smtiles[0] = &pos->smtiles[0];
-	pos->rtiles[0].smtiles[1] = &pos->smtiles[3];
-	pos->rtiles[1].smtiles[0] = &pos->smtiles[0];
-	pos->rtiles[1].smtiles[1] = &pos->smtiles[4];
+		int n = 0;
+		for (int s = 0; s < MAX_ROADS; s++) {
+			if (s == r)
+				continue;
+			const int *other = road_settlements[s];
+			if (other[0] == ends[0] || other[0] == ends[1] || other[1] == ends[0] || other[1] == ends[1])
+				rtile->rtiles[n++] = &pos->rtiles[s];
+		}
+	}
 }
 
 void randomize_position(struct position *pos) {
@@ -198,9 +256,9 @@ void randomize_position(struct position *pos) {
 	}
 
 
-	int desert = rand() % MAX_SETTLEMENTS;
+	int desert = rand() % MAX_TILES;
 
-	for (int i = 0; i < MAX_SETTLEMENTS; i++) {
+	for (int i = 0; i < MAX_TILES; i++) {
 		if (i == desert) {
 			pos->tiles[i].number = 0;
 			pos->tiles[i].type = DESERT;
