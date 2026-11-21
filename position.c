@@ -19,6 +19,8 @@ enum {
 
 /* settlement tile */
 struct smtile {
+	int index;
+
 	int player;
 	int city;
 	int settlement;
@@ -35,6 +37,8 @@ struct smtile {
 
 /* road tile */
 struct rtile {
+	int index;
+
 	int player;
 	int road;
 
@@ -45,6 +49,8 @@ struct rtile {
 };
 
 struct tile {
+	int index;
+
 	int type;
 	int number;
 	int robber;
@@ -58,6 +64,8 @@ struct player {
 	int city;
 
 	int score;
+
+	int longestroad;
 };
 
 struct position {
@@ -70,6 +78,9 @@ struct position {
 	struct tile tiles[MAX_TILES];
 	struct smtile smtiles[MAX_SETTLEMENTS];
 	struct rtile rtiles[MAX_ROADS];
+
+	struct smtile *common_smtile[MAX_ROADS][MAX_ROADS];
+
 };
 
 char *resource_to_string(int resource) {
@@ -217,6 +228,8 @@ void position_init(struct position *pos) {
 	memset(pos, 0, sizeof(*pos));
 
 	for (int t = 0; t < MAX_TILES; t++) {
+		pos->tiles[t].index = t;
+
 		for (int i = 0; i < 6; i++) {
 			struct smtile *smtile = &pos->smtiles[tile_settlements[t][i]];
 			int n = 0;
@@ -231,6 +244,7 @@ void position_init(struct position *pos) {
 	 */
 	for (int r = 0; r < MAX_ROADS; r++) {
 		struct rtile *rtile = &pos->rtiles[r];
+		rtile->index = r;
 		const int *ends = road_settlements[r];
 
 		rtile->smtiles[0] = &pos->smtiles[ends[0]];
@@ -249,6 +263,7 @@ void position_init(struct position *pos) {
 	for (int s = 0; s < MAX_SETTLEMENTS; s++) {
 		int n = 0;
 		struct smtile *smtile = &pos->smtiles[s];
+		smtile->index = s;
 		for (int r = 0; r < MAX_ROADS; r++) {
 			struct rtile *rtile = &pos->rtiles[r];
 
@@ -260,15 +275,29 @@ void position_init(struct position *pos) {
 	}
 
 	pos->setup = 1;
+
+	for (int r1 = 0; r1 < MAX_ROADS; r1++) {
+		for (int r2 = 0; r2 < MAX_ROADS; r2++) {
+			if (r1 == r2)
+				continue;
+
+			for (int s1 = 0; pos->rtiles[r1].smtiles[s1]; s1++) {
+				for (int s2 = 0; pos->rtiles[r2].smtiles[s2]; s2++) {
+					if (pos->rtiles[r1].smtiles[s1] == pos->rtiles[r2].smtiles[s2])
+						pos->common_smtile[r1][r2] = pos->rtiles[r1].smtiles[s1];
+				}
+			}
+		}
+	}
 }
 
-void randomize_position(struct position *pos) {
+void randomize_position(struct position *pos, uint64_t *seed) {
 	int numbers[18] = { 2, 3, 3, 4, 4, 5, 5, 6, 6, 8, 8, 9, 9, 10, 10, 11, 11, 12 };
 	int resources[18] = { BRICK, BRICK, BRICK, LUMBER, LUMBER, LUMBER, LUMBER, ORE, ORE, ORE, GRAIN, GRAIN, GRAIN, GRAIN, WOOL, WOOL, WOOL, WOOL };
 
 	/* Fisher-Yates */
 	for (int i = 17; i >= 1; i--) {
-		int j = rand() % (i + 1);
+		int j = uniformint(seed, 0, i + 1);
 
 		int a = resources[i];
 		resources[i] = resources[j];
@@ -276,14 +305,14 @@ void randomize_position(struct position *pos) {
 	}
 
 	for (int i = 17; i >= 1; i--) {
-		int j = rand() % (i + 1);
+		int j = uniformint(seed, 0, i + 1);
 
 		int a = numbers[i];
 		numbers[i] = numbers[j];
 		numbers[j] = a;
 	}
 
-	int desert = rand() % MAX_TILES;
+	int desert = uniformint(seed, 0, MAX_TILES);
 
 	for (int i = 0; i < MAX_TILES; i++) {
 		if (i == desert) {

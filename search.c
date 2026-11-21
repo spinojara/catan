@@ -32,8 +32,19 @@ int best_node(const struct node *node) {
 }
 
 struct node *free_node(struct node *node, ssize_t except) {
-	if (!node || !node->n)
-		return NULL;
+	/* Never expanded, so there is no subtree to keep. Start a new
+	 * empty one if a child was asked for.
+	 */
+	if (!node || !node->n) {
+		if (except < 0)
+			return NULL;
+		struct node *ret = calloc(1, sizeof(*ret));
+		if (!ret) {
+			fprintf(stderr, "error: calloc\n");
+			exit(1);
+		}
+		return ret;
+	}
 
 	if (node->nmoves) {
 		for (size_t i = 0; i < node->nmoves; i++) {
@@ -120,12 +131,12 @@ int rollout(struct position *pos, uint64_t *seed, int ply) {
 	struct move *move;
 	if (n == 0) {
 		pos->turn = 1 - pos->turn;
-		m = (rand() % 6) + (rand() % 6) + 2;
+		m = uniformint(seed, 1, 7) + uniformint(seed, 1, 7);
 
 		do_random(pos, m);
 	}
 	else {
-		int j = rand() % n;
+		int j = uniformint(seed, 0, n);
 
 		move = &moves[j];
 
@@ -166,7 +177,7 @@ int mcts_random(struct position *pos, uint64_t *seed, struct node *node, int ply
 		result = rollout(pos, seed, 0);
 	}
 	else {
-		size_t j = (rand() % 6) + (rand() % 6) + 2;
+		size_t j = uniformint(seed, 1, 7) + uniformint(seed, 1, 7);
 		do_random(pos, j);
 
 		result = mcts_internal(pos, seed, &node->nodes[j - 2], ply + 1);
@@ -239,26 +250,22 @@ int mcts_internal(struct position *pos, uint64_t *seed, struct node *node, int p
 	return result;
 }
 
-int mcts(struct position *pos, int maxtime, struct node **root, uint64_t *seed) {
+void mcts(struct position *pos, int maxtime, struct node **root, uint64_t *seed, struct move *return_move) {
 	int64_t starttime = time_now();
 	int64_t endtime = starttime + maxtime * TPPERMS;
 	int64_t lastinfotime = starttime;
 
-	struct move *moves = NULL;
-	size_t n = 0;
-	generate(pos, &moves, &n);
-
+	/* Always run at least once so the root has moves to choose from. */
 	int64_t now;
-	while ((now = time_now()) < endtime) {
+	do {
 		mcts_internal(pos, seed, *root, 0);
 
+		now = time_now();
 		if (now - lastinfotime > 500 * TPPERMS) {
 			lastinfotime = now;
-			int bn = best_node(*root);
+			//int bn = best_node(*root);
 		}
-	}
-
-	int bn = best_node(*root);
+	} while (now < endtime);
 
 	/* Insertion sort moves. */
 	for (size_t i = 1; i < (*root)->nmoves; i++) {
@@ -292,9 +299,11 @@ int mcts(struct position *pos, int maxtime, struct node **root, uint64_t *seed) 
 		printf(" (%lf, %d)\n", q, node->n);
 	}
 
+	int bn = best_node(*root);
+
+	memcpy(return_move, &(*root)->moves[bn], sizeof(*return_move));
+
 	struct node *ret = free_node(*root, bn);
 	free(*root);
 	*root = ret;
-
-	return 0;
 }

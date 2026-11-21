@@ -31,11 +31,17 @@ struct move {
 	/* Build. */
 	int building;
 
+	/* If building == SETTLEMENT then this might make a road unreachable. */
+	int unreachable[3];
+
 	struct smtile *smtile;
 	struct rtile *rtile;
 
 	/* Random. */
 	int number;
+
+	/* Old longest road. */
+	int prevroad[2];
 };
 
 /* 2 <= n <= 12, distributed as 2, D6 */
@@ -112,7 +118,8 @@ void generate_build(struct position *pos, struct move **moves, size_t *n) {
 	const struct player *player = &pos->player[pos->turn];
 
 	if (player->resources[ORE] >= 3 && player->resources[GRAIN] >= 2 && player->city < 4) {
-		for (struct smtile *smtile = pos->smtiles; smtile - pos->smtiles < MAX_SETTLEMENTS; smtile++) {
+		for (int s = 0; s < MAX_SETTLEMENTS; s++) {
+			struct smtile *smtile = &pos->smtiles[s];
 			if (smtile->player == pos->turn && smtile->settlement) {
 				*moves = realloc(*moves, ++*n * sizeof(**moves));
 				struct move *move = &(*moves)[*n - 1];
@@ -125,7 +132,8 @@ void generate_build(struct position *pos, struct move **moves, size_t *n) {
 	}
 
 	if (player->resources[WOOL] >= 1 && player->resources[GRAIN] >= 1 && player->resources[LUMBER] >= 1 && player->resources[BRICK] >= 1 && player->settlement < 5) {
-		for (struct smtile *smtile = pos->smtiles; smtile - pos->smtiles < MAX_SETTLEMENTS; smtile++) {
+		for (int s = 0; s < MAX_SETTLEMENTS; s++) {
+			struct smtile *smtile = &pos->smtiles[s];
 			if (!smtile->city && !smtile->settlement && !smtile->blocked && smtile->reachable[pos->turn]) {
 				*moves = realloc(*moves, ++*n * sizeof(**moves));
 				struct move *move = &(*moves)[*n - 1];
@@ -133,12 +141,26 @@ void generate_build(struct position *pos, struct move **moves, size_t *n) {
 				move->smtile = smtile;
 				move->type = BUILD;
 				move->flip = 0;
+
+				memset(move->unreachable, 0, sizeof(*move->unreachable));
+
+				/* Make sure new settlements make roads unreachable for the other player. */
+				for (int r1 = 0; smtile->rtiles[r1]; r1++) {
+					for (int r2 = 0; smtile->rtiles[r2]; r2++) {
+						if (r1 == r2)
+							continue;
+
+						if (smtile->rtiles[r1]->road && smtile->rtiles[r1]->player == 1 - pos->turn)
+							move->unreachable[r2] += 1;
+					}
+				}
 			}
 		}
 	}
 
 	if (player->resources[LUMBER] >= 1 && player->resources[BRICK] >= 1 && player->road < 15) {
-		for (struct rtile *rtile = pos->rtiles; rtile - pos->rtiles < MAX_ROADS; rtile++) {
+		for (int r = 0; r < MAX_ROADS; r++) {
+			struct rtile *rtile = &pos->rtiles[r];
 			if (!rtile->road && rtile->reachable[pos->turn]) {
 				*moves = realloc(*moves, ++*n * sizeof(**moves));
 				struct move *move = &(*moves)[*n - 1];
@@ -171,8 +193,13 @@ void do_build(struct position *pos, struct move *move) {
 		move->rtile->road = 1;
 		move->rtile->player = pos->turn;
 
-		for (int i = 0; move->rtile->rtiles[i]; i++)
-			move->rtile->rtiles[i]->reachable[pos->turn]++;
+		/* A road is only reachable if it was not blocked by a settlement/city. */
+		for (int i = 0; move->rtile->rtiles[i]; i++) {
+			struct smtile *blocking_smtile = pos->common_smtile[move->rtile->index][move->rtile->rtiles[i]->index];
+
+			if (!(blocking_smtile->player == 1 - pos->turn && (blocking_smtile->city || blocking_smtile->settlement)))
+				move->rtile->rtiles[i]->reachable[pos->turn]++;
+		}
 		for (int i = 0; move->rtile->smtiles[i]; i++)
 			move->rtile->smtiles[i]->reachable[pos->turn]++;
 
@@ -201,6 +228,9 @@ void do_build(struct position *pos, struct move *move) {
 			pos->player[pos->turn].resources[BRICK]--;
 			pos->player[pos->turn].resources[WOOL]--;
 			pos->player[pos->turn].resources[GRAIN]--;
+
+			for (int r = 0; move->smtile->rtiles[r]; r++)
+				move->smtile->rtiles[r]->reachable[1 - pos->turn] -= move->unreachable[r];
 		}
 
 		pos->player[pos->turn].settlement += (move->building == SETTLEMENT) - (move->building == CITY);
@@ -220,8 +250,13 @@ void undo_build(struct position *pos, struct move *move) {
 	else if (move->building == ROAD) {
 		move->rtile->road = 0;
 
-		for (int i = 0; move->rtile->rtiles[i]; i++)
-			move->rtile->rtiles[i]->reachable[pos->turn]--;
+		/* A road is only reachable if it was not blocked by a settlement/city. */
+		for (int i = 0; move->rtile->rtiles[i]; i++) {
+			struct smtile *blocking_smtile = pos->common_smtile[move->rtile->index][move->rtile->rtiles[i]->index];
+
+			if (!(blocking_smtile->player == 1 - pos->turn && (blocking_smtile->city || blocking_smtile->settlement)))
+				move->rtile->rtiles[i]->reachable[pos->turn]--;
+		}
 		for (int i = 0; move->rtile->smtiles[i]; i++)
 			move->rtile->smtiles[i]->reachable[pos->turn]--;
 
@@ -249,6 +284,9 @@ void undo_build(struct position *pos, struct move *move) {
 			pos->player[pos->turn].resources[BRICK]++;
 			pos->player[pos->turn].resources[WOOL]++;
 			pos->player[pos->turn].resources[GRAIN]++;
+
+			for (int r = 0; move->smtile->rtiles[r]; r++)
+				move->smtile->rtiles[r]->reachable[1 - pos->turn] += move->unreachable[r];
 		}
 
 		pos->player[pos->turn].settlement -= (move->building == SETTLEMENT) - (move->building == CITY);
@@ -381,45 +419,51 @@ void undo_move(struct position *pos, struct move *move) {
 	}
 }
 
-void print_move(struct position *pos, struct move *move) {
-	printf("move ");
-
+void move_to_str(struct move *move, char str[256]) {
+	size_t i = 0;
 	if (move->type == BUILD) {
-		printf("build ");
+		i += sprintf(str + i, "build ");
 
 		if (move->building == ROAD) {
-			printf("road %ld", move->rtile - pos->rtiles);
+			i += sprintf(str + i, "road %d", move->rtile->index);
 		}
 		else if (move->building == SETTLEMENT) {
-			printf("settlement %ld", move->smtile - pos->smtiles);
+			i += sprintf(str + i, "settlement %d", move->smtile->index);
 		}
 		else if (move->building == CITY) {
-			printf("city %ld", move->smtile - pos->smtiles);
+			i += sprintf(str + i, "city %d", move->smtile->index);
 		}
 		else {
-			printf("development card");
+			i += sprintf(str + i, "development card");
 		}
 	}
 	else if (move->type == SETUP) {
-		printf("setup settlement %ld road %ld", move->smtile - pos->smtiles, move->rtile - pos->rtiles);
+		i += sprintf(str + i, "setup settlement %d road %d", move->smtile->index, move->rtile->index);
 	}
 	else if (move->type == TRADE) {
-		printf("trade ");
+		i += sprintf(str + i, "trade ");
 
 		for (int r = 0; r < DESERT; r++) {
 			if (move->out[r])
-				printf("%d %s ", move->out[r], resource_to_string(r));
+				i += sprintf(str + i, "%d %s ", move->out[r], resource_to_string(r));
 		}
-		printf("->");
+		i += sprintf(str + i, "->");
 		for (int r = 0; r < DESERT; r++) {
 			if (move->in[r])
-				printf("%d %s ", move->in[r], resource_to_string(r));
+				i += sprintf(str + i, "%d %s ", move->in[r], resource_to_string(r));
 		}
 	}
 	else if (move->type == ENDTURN) {
-		printf("end turn");
+		i += sprintf(str + i, "end turn");
 	}
 	else if (move->type == RANDOM) {
-		printf("random");
+		i += sprintf(str + i, "random");
 	}
+}
+
+void print_move(struct position *pos, struct move *move) {
+	(void)pos;
+	char str[256];
+	move_to_str(move, str);
+	printf("move %s", str);
 }
