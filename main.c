@@ -1,6 +1,9 @@
+#define _POSIX_C_SOURCE 199309L
 #include <stdio.h>
 #include <time.h>
 #include <stdlib.h>
+#include <stddef.h>
+#include <sys/types.h>
 
 #include "util.c"
 #include "position.c"

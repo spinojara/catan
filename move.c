@@ -57,6 +57,21 @@ struct move {
 	int prevroad[2];
 };
 
+/* Add a move to the list, growing it in chunks instead of one move at a
+ * time. A list starts as NULL with n = 0. It then always has room for 16
+ * moves, or the next power of two, so the size never needs to be stored.
+ */
+struct move *add_move(struct move **moves, size_t *n) {
+	if (*n == 0 || (*n >= 16 && !(*n & (*n - 1)))) {
+		*moves = realloc(*moves, (*n ? 2 * *n : 16) * sizeof(**moves));
+		if (!*moves) {
+			fprintf(stderr, "error: realloc\n");
+			exit(1);
+		}
+	}
+	return &(*moves)[(*n)++];
+}
+
 void generate_setup(struct position *pos, struct move **moves, size_t *n) {
 	int flip = (pos->setup % 2) ? 1 : 0;
 
@@ -66,13 +81,13 @@ void generate_setup(struct position *pos, struct move **moves, size_t *n) {
 
 		/* Nothing can have been built on this rtile. */
 		for (int r = 0; pos->smtiles[s].rtiles[r]; r++) {
-			*moves = realloc(*moves, ++*n * sizeof(**moves));
-			(*moves)[*n - 1].type = SETUP;
-			(*moves)[*n - 1].smtile = &pos->smtiles[s];
-			(*moves)[*n - 1].rtile = pos->smtiles[s].rtiles[r];
-			(*moves)[*n - 1].flip = flip;
+			struct move *move = add_move(moves, n);
+			move->type = SETUP;
+			move->smtile = &pos->smtiles[s];
+			move->rtile = pos->smtiles[s].rtiles[r];
+			move->flip = flip;
 			/* No opponent road can touch a spot that is free in the setup. */
-			memset((*moves)[*n - 1].unreachable, 0, sizeof((*moves)[*n - 1].unreachable));
+			memset(move->unreachable, 0, sizeof(move->unreachable));
 		}
 	}
 }
@@ -97,8 +112,7 @@ void generate_trade(const struct position *pos, struct move **moves, size_t *n) 
 		for (int ig = 0; ig <= total - ib - il - io; ig++) {
 			int iw = total - ib - il - io - ig;
 
-			*moves = realloc(*moves, ++*n * sizeof(**moves));
-			struct move *move = &(*moves)[*n - 1];
+			struct move *move = add_move(moves, n);
 
 			move->out[BRICK] = 4 * brick;
 			move->out[LUMBER] = 4 * lumber;
@@ -132,8 +146,7 @@ void generate_build(struct position *pos, struct move **moves, size_t *n) {
 		for (int s = 0; s < MAX_SETTLEMENTS; s++) {
 			struct smtile *smtile = &pos->smtiles[s];
 			if (smtile->player == pos->turn && smtile->settlement) {
-				*moves = realloc(*moves, ++*n * sizeof(**moves));
-				struct move *move = &(*moves)[*n - 1];
+				struct move *move = add_move(moves, n);
 				move->building = CITY;
 				move->smtile = smtile;
 				move->type = BUILD;
@@ -146,8 +159,7 @@ void generate_build(struct position *pos, struct move **moves, size_t *n) {
 		for (int s = 0; s < MAX_SETTLEMENTS; s++) {
 			struct smtile *smtile = &pos->smtiles[s];
 			if (!smtile->city && !smtile->settlement && !smtile->blocked && smtile->reachable[pos->turn]) {
-				*moves = realloc(*moves, ++*n * sizeof(**moves));
-				struct move *move = &(*moves)[*n - 1];
+				struct move *move = add_move(moves, n);
 				move->building = SETTLEMENT;
 				move->smtile = smtile;
 				move->type = BUILD;
@@ -173,8 +185,7 @@ void generate_build(struct position *pos, struct move **moves, size_t *n) {
 		for (int r = 0; r < MAX_ROADS; r++) {
 			struct rtile *rtile = &pos->rtiles[r];
 			if (!rtile->road && rtile->reachable[pos->turn]) {
-				*moves = realloc(*moves, ++*n * sizeof(**moves));
-				struct move *move = &(*moves)[*n - 1];
+				struct move *move = add_move(moves, n);
 				move->building = ROAD;
 				move->rtile = rtile;
 				move->type = BUILD;
@@ -184,8 +195,7 @@ void generate_build(struct position *pos, struct move **moves, size_t *n) {
 	}
 
 	if (player->resources[ORE] >= 1 && player->resources[GRAIN] >= 1 && player->resources[WOOL] >= 1) {
-		*moves = realloc(*moves, ++*n * sizeof(**moves));
-		struct move *move = &(*moves)[*n - 1];
+		struct move *move = add_move(moves, n);
 		move->building = DEVELOPMENT;
 		move->type = BUILD;
 		move->flip = 0;
@@ -314,13 +324,15 @@ void do_random(struct position *pos, int n) {
 	if (n == 7)
 		pos->seven = 4;
 
-	for (int i = 0; i < MAX_SETTLEMENTS; i++) {
-		if (pos->smtiles[i].city || pos->smtiles[i].settlement) {
-			for (int j = 0; pos->smtiles[i].tiles[j]; j++) {
-				if (pos->smtiles[i].tiles[j]->number == n && pos->smtiles[i].tiles[j]->type != DESERT && !pos->smtiles[i].tiles[j]->robber) {
-					pos->player[pos->smtiles[i].player].resources[pos->smtiles[i].tiles[j]->type] += 1 + pos->smtiles[i].city;
-				}
-			}
+	for (int t = 0; t < MAX_TILES; t++) {
+		struct tile *tile = &pos->tiles[t];
+		if (tile->number != n || tile->type == DESERT || tile->robber)
+			continue;
+
+		for (int s = 0; tile->smtiles[s]; s++) {
+			struct smtile *smtile = tile->smtiles[s];
+			if (smtile->city || smtile->settlement)
+				pos->player[smtile->player].resources[tile->type] += 1 + smtile->city;
 		}
 	}
 
@@ -331,13 +343,15 @@ void undo_random(struct position *pos, int n) {
 	if (n == 7)
 		pos->seven = 0;
 
-	for (int i = 0; i < MAX_SETTLEMENTS; i++) {
-		if (pos->smtiles[i].city || pos->smtiles[i].settlement) {
-			for (int j = 0; pos->smtiles[i].tiles[j]; j++) {
-				if (pos->smtiles[i].tiles[j]->number == n && pos->smtiles[i].tiles[j]->type != DESERT && !pos->smtiles[i].tiles[j]->robber) {
-					pos->player[pos->smtiles[i].player].resources[pos->smtiles[i].tiles[j]->type] -= 1 + pos->smtiles[i].city;
-				}
-			}
+	for (int t = 0; t < MAX_TILES; t++) {
+		struct tile *tile = &pos->tiles[t];
+		if (tile->number != n || tile->type == DESERT || tile->robber)
+			continue;
+
+		for (int s = 0; tile->smtiles[s]; s++) {
+			struct smtile *smtile = tile->smtiles[s];
+			if (smtile->city || smtile->settlement)
+				pos->player[smtile->player].resources[tile->type] -= 1 + smtile->city;
 		}
 	}
 
@@ -371,27 +385,27 @@ int can_steal(const struct position *pos) {
 void generate_steal(struct position *pos, struct move **moves, size_t *n) {
 	(void)pos;
 	for (int r = 0; r < DESERT; r++) {
-		*moves = realloc(*moves, ++*n * sizeof(**moves));
-		(*moves)[*n - 1].type = STEAL;
-		memset((*moves)[*n - 1].in, 0, sizeof((*moves)[*n - 1].in));
-		(*moves)[*n - 1].in[r] = 1;
-		(*moves)[*n - 1].flip = 0;
+		struct move *move = add_move(moves, n);
+		move->type = STEAL;
+		memset(move->in, 0, sizeof(move->in));
+		move->in[r] = 1;
+		move->flip = 0;
 	}
 
-	*moves = realloc(*moves, ++*n * sizeof(**moves));
-	(*moves)[*n - 1].type = STEAL;
-	(*moves)[*n - 1].flip = 0;
-	memset((*moves)[*n - 1].in, 0, sizeof((*moves)[*n - 1].in));
+	struct move *move = add_move(moves, n);
+	move->type = STEAL;
+	move->flip = 0;
+	memset(move->in, 0, sizeof(move->in));
 }
 
 void generate_discard(struct position *pos, struct move **moves, size_t *n) {
 	struct player *player = &pos->player[pos->turn];
 	int sum = player->resources[BRICK] + player->resources[LUMBER] + player->resources[GRAIN] + player->resources[WOOL] + player->resources[ORE];
 	if (sum <= 7) {
-		*moves = realloc(*moves, ++*n * sizeof(**moves));
-		(*moves)[*n - 1].type = DISCARD;
-		memset((*moves)[*n - 1].out, 0, sizeof((*moves)[*n - 1].out));
-		(*moves)[*n - 1].flip = 1;
+		struct move *move = add_move(moves, n);
+		move->type = DISCARD;
+		memset(move->out, 0, sizeof(move->out));
+		move->flip = 1;
 	}
 	else {
 		int discard = sum / 2;
@@ -404,14 +418,14 @@ void generate_discard(struct position *pos, struct move **moves, size_t *n) {
 			if (to > player->resources[ORE])
 				continue;
 
-			*moves = realloc(*moves, ++*n * sizeof(**moves));
-			(*moves)[*n - 1].type = DISCARD;
-			(*moves)[*n - 1].out[BRICK] = tb;
-			(*moves)[*n - 1].out[LUMBER] = tl;
-			(*moves)[*n - 1].out[GRAIN] = tg;
-			(*moves)[*n - 1].out[WOOL] = tw;
-			(*moves)[*n - 1].out[ORE] = to;
-			(*moves)[*n - 1].flip = 1;
+			struct move *move = add_move(moves, n);
+			move->type = DISCARD;
+			move->out[BRICK] = tb;
+			move->out[LUMBER] = tl;
+			move->out[GRAIN] = tg;
+			move->out[WOOL] = tw;
+			move->out[ORE] = to;
+			move->flip = 1;
 		}
 		}
 		}
@@ -423,10 +437,10 @@ void generate_robber(struct position *pos, struct move **moves, size_t *n) {
 	for (int t = 0; t < MAX_TILES; t++) {
 		if (pos->tiles[t].robber)
 			continue;
-		*moves = realloc(*moves, ++*n * sizeof(**moves));
-		(*moves)[*n - 1].type = ROBBER;
-		(*moves)[*n - 1].tile = &pos->tiles[t];
-		(*moves)[*n - 1].flip = 0;
+		struct move *move = add_move(moves, n);
+		move->type = ROBBER;
+		move->tile = &pos->tiles[t];
+		move->flip = 0;
 	}
 }
 
@@ -450,12 +464,11 @@ void undo_robber(struct position *pos, struct move *move) {
 
 int generate(struct position *pos, struct move **moves, size_t *n) {
 	if (pos->dice) {
-		*n = 11;
-		*moves = realloc(*moves, *n * sizeof(**moves));
-		for (size_t i = 0; i < *n; i++) {
-			(*moves)[i].type = RANDOM;
-			(*moves)[i].number = i + 2;
-			(*moves)[i].flip = 0;
+		for (int number = 2; number <= 12; number++) {
+			struct move *move = add_move(moves, n);
+			move->type = RANDOM;
+			move->number = number;
+			move->flip = 0;
 		}
 		return DICE;
 	}
@@ -478,9 +491,9 @@ int generate(struct position *pos, struct move **moves, size_t *n) {
 			generate_setup(pos, moves, n);
 		}
 		else {
-			*moves = realloc(*moves, ++*n * sizeof(**moves));
-			(*moves)[*n - 1].type = ENDTURN;
-			(*moves)[*n - 1].flip = 1;
+			struct move *move = add_move(moves, n);
+			move->type = ENDTURN;
+			move->flip = 1;
 			generate_build(pos, moves, n);
 			generate_trade(pos, moves, n);
 		}

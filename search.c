@@ -73,8 +73,31 @@ struct node *free_node(struct node *node, ssize_t except) {
 	return ret;
 }
 
+/* Almost every rollout ends the game long before this. It is only a safety
+ * net, since a blocked board can stop both players from reaching 8 points.
+ */
+#define MAX_ROLLOUT_PLIES 1000
+
+int score_tile(int number) {
+	return number ? 6 - abs(7 - number) : 0;
+}
+
+int production(const struct smtile *smtile) {
+	int sum = 0;
+	for (int t = 0; smtile->tiles[t]; t++)
+		sum += score_tile(smtile->tiles[t]->number);
+	return sum;
+}
+
+int reaches_free_spot(const struct rtile *rtile) {
+	for (int s = 0; rtile->smtiles[s]; s++)
+		if (!rtile->smtiles[s]->blocked && !rtile->smtiles[s]->settlement && !rtile->smtiles[s]->city)
+			return 1;
+	return 0;
+}
+
 int rollout(struct position *pos, uint64_t *seed, int ply) {
-	if (ply >= 200)
+	if (ply >= MAX_ROLLOUT_PLIES)
 		return pos->player[pos->turn].score - pos->player[1 - pos->turn].score;
 	int result;
 	if ((result = gameover(pos)))
@@ -86,6 +109,24 @@ int rollout(struct position *pos, uint64_t *seed, int ply) {
 	int type = generate(pos, &moves, &n);
 
 	if (type == CHOICE) {
+		/* In the setup, only settle on the most productive spots. Random
+		 * spots often produce so little that the game takes thousands of
+		 * plies.
+		 */
+		if (pos->setup) {
+			int best = 0;
+			for (size_t i = 0; i < n; i++)
+				best = max(best, production(moves[i].smtile));
+
+			for (size_t i = 0; i < n; i++) {
+				if (production(moves[i].smtile) < best - 2) {
+					memcpy(&moves[i], &moves[n - 1], sizeof(moves[i]));
+					n--;
+					i--;
+				}
+			}
+		}
+
 		/* Filter all roads if we can already reach somewhere.
 		 * Maybe allow building longest road, unless we are >= 3 ahead of
 		 * our opponent in this category.
@@ -124,23 +165,71 @@ int rollout(struct position *pos, uint64_t *seed, int ply) {
 			}
 		}
 
-		/* Only allow trades which immediately make us able to build. */
+		/* If a road can reach a free spot, only build those roads. */
+		int road_reaches = 0;
+		for (size_t i = 0; i < n && !road_reaches; i++)
+			if (moves[i].type == BUILD && moves[i].building == ROAD && reaches_free_spot(moves[i].rtile))
+				road_reaches = 1;
+
+		if (road_reaches) {
+			for (size_t i = 0; i < n; i++) {
+				if (moves[i].type == BUILD && moves[i].building == ROAD && !reaches_free_spot(moves[i].rtile)) {
+					memcpy(&moves[i], &moves[n - 1], sizeof(moves[i]));
+					n--;
+					i--;
+				}
+			}
+		}
+
+		/* Only allow trades which make a build possible that was not
+		 * possible before, and which only take cards we are missing.
+		 * Anything else throws away 3 cards for nothing.
+		 */
+		const struct player *player = &pos->player[pos->turn];
+		int can_build_road = 0;
+		if (!has_reachable && player->road < 15)
+			for (int r = 0; r < MAX_ROADS && !can_build_road; r++)
+				if (!pos->rtiles[r].road && pos->rtiles[r].reachable[pos->turn])
+					can_build_road = 1;
+
+		static const int cost[3][DESERT] = {
+			[ROAD] = { [BRICK] = 1, [LUMBER] = 1 },
+			[SETTLEMENT] = { [BRICK] = 1, [LUMBER] = 1, [GRAIN] = 1, [WOOL] = 1 },
+			[CITY] = { [ORE] = 3, [GRAIN] = 2 },
+		};
+		const int want[3] = {
+			[ROAD] = can_build_road,
+			[SETTLEMENT] = has_reachable && player->settlement < 5,
+			[CITY] = player->settlement && player->city < 4,
+		};
+
 		for (size_t i = 0; i < n; i++) {
 			if (moves[i].type != TRADE)
 				continue;
 
-			if (!has_reachable && (pos->player[pos->turn].resources[BRICK] + moves[i].in[BRICK] - moves[i].out[BRICK] >= 1) && (pos->player[pos->turn].resources[LUMBER] + moves[i].in[LUMBER] - moves[i].out[LUMBER] >= 1))
-				continue;
+			int keep = 0;
+			for (int b = ROAD; b <= CITY && !keep; b++) {
+				if (!want[b])
+					continue;
 
-			if (has_reachable && (pos->player[pos->turn].resources[BRICK] + moves[i].in[BRICK] - moves[i].out[BRICK] >= 1) && (pos->player[pos->turn].resources[LUMBER] + moves[i].in[LUMBER] - moves[i].out[LUMBER] >= 1) && (pos->player[pos->turn].resources[GRAIN] + moves[i].in[GRAIN] - moves[i].out[GRAIN] >= 1) && (pos->player[pos->turn].resources[WOOL] + moves[i].in[WOOL] - moves[i].out[WOOL] >= 1))
-				continue;
+				int missing_before = 0, missing_after = 0, too_much = 0;
+				for (int r = 0; r < DESERT; r++) {
+					int before = player->resources[r];
+					int after = before + moves[i].in[r] - moves[i].out[r];
+					int missing = max(0, cost[b][r] - before);
+					missing_before += missing;
+					missing_after += max(0, cost[b][r] - after);
+					too_much |= moves[i].in[r] > missing;
+				}
 
-			if (pos->player[pos->turn].settlement && (pos->player[pos->turn].resources[ORE] + moves[i].in[ORE] - moves[i].out[ORE] >= 3) && (pos->player[pos->turn].resources[GRAIN] + moves[i].in[GRAIN] - moves[i].out[GRAIN] >= 2))
-				continue;
+				keep = missing_before && !missing_after && !too_much;
+			}
 
-			memcpy(&moves[i], &moves[n - 1], sizeof(moves[i]));
-			n--;
-			i--;
+			if (!keep) {
+				memcpy(&moves[i], &moves[n - 1], sizeof(moves[i]));
+				n--;
+				i--;
+			}
 		}
 
 		/* Remove any robber moves which don't attack the enemy,
@@ -218,6 +307,9 @@ int rollout(struct position *pos, uint64_t *seed, int ply) {
 	else if (type == CHOICE) {
 		j = uniformint(seed, 0, n);
 	}
+	else {
+		exit(67);
+	}
 
 	do_move(pos, &moves[j]);
 
@@ -239,6 +331,11 @@ int mcts_internal(struct position *pos, uint64_t *seed, struct node *node, int p
 	}
 	else if (node->n == 0) {
 		node->type = generate(pos, &node->moves, &node->nmoves);
+		/* add_move leaves room to grow, but nothing is ever added to a
+		 * node's moves, so give it back.
+		 */
+		if (node->nmoves)
+			node->moves = realloc(node->moves, node->nmoves * sizeof(*node->moves));
 
 		node->nodes = calloc(node->nmoves, sizeof(*node->nodes));
 
