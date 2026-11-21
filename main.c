@@ -24,13 +24,23 @@ int main(void) {
 	while (1) {
 		struct move move;
 
+		/* A finished game has no moves, so the search would crash. */
+		int result = gameover(&pos);
+		if (result) {
+			int winner = result > 0 ? pos.turn : 1 - pos.turn;
+			printf("%s wins\n", winner == bot ? "robot" : "human");
+			break;
+		}
+
 		if (pos.dice) {
 			int m = uniformint(&seed, 1, 7) + uniformint(&seed, 1, 7);
 			printf("\n\n\n\nchance move: %d\n", m);
 
 			do_random(&pos, m);
 
-			root = free_node(root, m - 2);
+			struct node *next = free_node(root, m - 2);
+			free(root);
+			root = next;
 		}
 		/* This is the steal phase which is random. */
 		else if (pos.seven == 1) {
@@ -64,7 +74,11 @@ int main(void) {
 
 			do_move(&pos, &moves[j]);
 
-			root = free_node(root, j);
+			struct node *next = free_node(root, j);
+			free(root);
+			root = next;
+
+			free(moves);
 		}
 		else {
 			if (pos.turn == bot) {
@@ -109,7 +123,11 @@ int main(void) {
 				}
 
 				/* Order is deterministic so we can just go to this node. */
-				root = free_node(root, i);
+				struct node *next = free_node(root, i);
+				free(root);
+				root = next;
+
+				free(moves);
 			}
 
 			do_move(&pos, &move);
@@ -127,4 +145,9 @@ int main(void) {
 				printf(" %d %s", pos.player[bot].resources[r], resource_to_string(r));
 		printf("\n");
 	}
+
+	free_node(root, -1);
+	free(root);
+
+	return 0;
 }

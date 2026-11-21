@@ -260,6 +260,8 @@ void undo_build(struct position *pos, struct move *move) {
 	}
 	else if (move->building == ROAD) {
 		move->rtile->road = 0;
+		/* Empty tiles have player 0, as after position_init. */
+		move->rtile->player = 0;
 
 		/* A road is only reachable if it was not blocked by a settlement/city. */
 		for (int i = 0; move->rtile->rtiles[i]; i++) {
@@ -281,6 +283,8 @@ void undo_build(struct position *pos, struct move *move) {
 
 		move->smtile->settlement = move->building == CITY;
 		move->smtile->city = 0;
+		if (move->building == SETTLEMENT)
+			move->smtile->player = 0;
 
 		for (int i = 0; move->smtile->rtiles[i]; i++)
 			for (int j = 0; move->smtile->rtiles[i]->smtiles[j]; j++)
