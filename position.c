@@ -54,6 +54,9 @@ struct tile {
 	int type;
 	int number;
 	int robber;
+
+	/* One more so that we end with NULL. */
+	struct smtile *smtiles[7];
 };
 
 struct player {
@@ -236,6 +239,7 @@ void position_init(struct position *pos) {
 
 		for (int i = 0; i < 6; i++) {
 			struct smtile *smtile = &pos->smtiles[tile_settlements[t][i]];
+			pos->tiles[t].smtiles[i] = smtile;
 			int n = 0;
 			while (smtile->tiles[n])
 				n++;

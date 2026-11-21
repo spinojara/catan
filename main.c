@@ -17,6 +17,8 @@ int main(void) {
 
 	struct node *root = calloc(1, sizeof(*root));
 
+	int bot = 1;
+
 	position_print(&pos);
 
 	while (1) {
@@ -24,7 +26,7 @@ int main(void) {
 
 		if (pos.dice) {
 			int m = uniformint(&seed, 1, 7) + uniformint(&seed, 1, 7);
-			printf("chance move: %d\n", m);
+			printf("\n\n\n\nchance move: %d\n", m);
 
 			do_random(&pos, m);
 
@@ -39,7 +41,7 @@ int main(void) {
 			struct player *them = &pos.player[1 - pos.turn];
 			int sum = them->resources[BRICK] + them->resources[LUMBER] + them->resources[GRAIN] + them->resources[ORE] + them->resources[WOOL];
 			size_t j;
-			if (!sum) {
+			if (!sum || !can_steal(&pos)) {
 				j = DESERT;
 			}
 			else {
@@ -65,7 +67,7 @@ int main(void) {
 			root = free_node(root, j);
 		}
 		else {
-			if (pos.turn == 1) {
+			if (pos.turn == bot) {
 				mcts(&pos, 7 * 1000, &root, &seed, &move);
 
 				printf("choosing: ");
@@ -112,5 +114,17 @@ int main(void) {
 
 			do_move(&pos, &move);
 		}
+
+		printf("human:");
+		for (int r = 0; r < DESERT; r++)
+			if (pos.player[1 - bot].resources[r])
+				printf(" %d %s", pos.player[1 - bot].resources[r], resource_to_string(r));
+		printf("\n");
+
+		printf("robot:");
+		for (int r = 0; r < DESERT; r++)
+			if (pos.player[bot].resources[r])
+				printf(" %d %s", pos.player[bot].resources[r], resource_to_string(r));
+		printf("\n");
 	}
 }

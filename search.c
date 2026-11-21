@@ -142,6 +142,44 @@ int rollout(struct position *pos, uint64_t *seed, int ply) {
 			n--;
 			i--;
 		}
+
+		/* Remove any robber moves which don't attack the enemy,
+		 * and those which attacks us.
+		 */
+		int would_filter_all = 1;
+		for (int j = 0; j < 2; j++) {
+			for (size_t i = 0; i < n; i++) {
+				if (moves[i].type != ROBBER)
+					continue;
+
+				int hurts_us = 0, hurts_them = 0;
+				for (int s = 0; moves[i].tile->smtiles[s]; s++) {
+					if ((moves[i].tile->smtiles[s]->city || moves[i].tile->smtiles[s]->settlement) && moves[i].tile->smtiles[s]->player == pos->turn)
+						hurts_us = 1;
+					if ((moves[i].tile->smtiles[s]->city || moves[i].tile->smtiles[s]->settlement) && moves[i].tile->smtiles[s]->player == 1 - pos->turn)
+						hurts_them = 1;
+				}
+
+				int keep = !hurts_us && hurts_them;
+				int definitely_dont_keep = hurts_us && !hurts_them;
+
+				/* Check if we can filter without filtering everything. */
+				if (j == 0) {
+					if (keep) {
+						would_filter_all = 0;
+						break;
+					}
+				}
+				/* Actually filter. */
+				else {
+					if ((!would_filter_all && !keep) || definitely_dont_keep) {
+						memcpy(&moves[i], &moves[n - 1], sizeof(moves[i]));
+						n--;
+						i--;
+					}
+				}
+			}
+		}
 	}
 
 	size_t j;
@@ -151,7 +189,7 @@ int rollout(struct position *pos, uint64_t *seed, int ply) {
 	else if (type == STEALRANDOM) {
 		struct player *them = &pos->player[1 - pos->turn];
 		int sum = them->resources[BRICK] + them->resources[LUMBER] + them->resources[GRAIN] + them->resources[ORE] + them->resources[WOOL];
-		if (!sum) {
+		if (!sum || !can_steal(pos)) {
 			j = DESERT;
 		}
 		else {
@@ -205,7 +243,7 @@ int mcts_internal(struct position *pos, uint64_t *seed, struct node *node, int p
 		else if (node->type == STEALRANDOM) {
 			struct player *them = &pos->player[1 - pos->turn];
 			int sum = them->resources[BRICK] + them->resources[LUMBER] + them->resources[GRAIN] + them->resources[ORE] + them->resources[WOOL];
-			if (!sum) {
+			if (!sum || !can_steal(pos)) {
 				j = DESERT;
 			}
 			else {

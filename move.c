@@ -350,6 +350,19 @@ void undo_trade(struct position *pos, struct move *move) {
 		pos->player[pos->turn].resources[r] -= move->in[r] - move->out[r];
 }
 
+/* The robber can only steal from the opponent if they have a settlement
+ * or city next to the tile it was moved to.
+ */
+int can_steal(const struct position *pos) {
+	const struct tile *tile = &pos->tiles[pos->robber];
+	for (int s = 0; tile->smtiles[s]; s++) {
+		const struct smtile *smtile = tile->smtiles[s];
+		if (smtile->player == 1 - pos->turn && (smtile->settlement || smtile->city))
+			return 1;
+	}
+	return 0;
+}
+
 /* Generate all steals, even if they are not possible. We will just not move into them later. */
 void generate_steal(struct position *pos, struct move **moves, size_t *n) {
 	(void)pos;
@@ -419,12 +432,16 @@ void do_robber(struct position *pos, struct move *move) {
 	pos->tiles[pos->robber].robber = 0;
 	move->tile->robber = 1;
 	pos->robber = move->tile->index;
+
+	pos->seven--;
 }
 
 void undo_robber(struct position *pos, struct move *move) {
 	move->tile->robber = 0;
 	move->prevtile->robber = 1;
 	pos->robber = move->prevtile->index;
+
+	pos->seven++;
 }
 
 int generate(struct position *pos, struct move **moves, size_t *n) {
