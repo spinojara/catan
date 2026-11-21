@@ -13,6 +13,8 @@ int64_t time_now(void) {
 }
 
 struct node {
+	int type;
+
 	int w;
 	int n;
 
@@ -81,23 +83,21 @@ int rollout(struct position *pos, uint64_t *seed, int ply) {
 	struct move *moves = NULL;
 	size_t n = 0;
 
-	int has_reachable = 0;
-	for (int s = 0; s < MAX_SETTLEMENTS; s++)
-		if (pos->smtiles[s].reachable[pos->turn] && !pos->smtiles[s].blocked && !pos->smtiles[s].city && !pos->smtiles[s].settlement)
-			has_reachable = 1;
+	int type = generate(pos, &moves, &n);
 
-	if (pos->setup)
-		generate_setup(pos, &moves, &n);
-	else {
-		generate_build(pos, &moves, &n);
-
+	if (type == CHOICE) {
 		/* Filter all roads if we can already reach somewhere.
 		 * Maybe allow building longest road, unless we are >= 3 ahead of
 		 * our opponent in this category.
 		 */
+		int has_reachable = 0;
+		for (int s = 0; s < MAX_SETTLEMENTS && !has_reachable; s++)
+			if (pos->smtiles[s].reachable[pos->turn] && !pos->smtiles[s].blocked && !pos->smtiles[s].city && !pos->smtiles[s].settlement)
+				has_reachable = 1;
+
 		if (has_reachable) {
 			for (size_t i = 0; i < n; i++) {
-				if (moves[i].building == ROAD) {
+				if (moves[i].type == BUILD && moves[i].building == ROAD) {
 					memcpy(&moves[i], &moves[n - 1], sizeof(moves[i]));
 					n--;
 					i--;
@@ -105,133 +105,106 @@ int rollout(struct position *pos, uint64_t *seed, int ply) {
 			}
 		}
 
-		if (!n) {
-			/* Memory leak? No */
-			generate_trade(pos, &moves, &n);
-
-			/* Only allow trades which immediately make us able to build. */
-			for (size_t i = 0; i < n; i++) {
-				if (!has_reachable && (pos->player[pos->turn].resources[BRICK] + moves[i].in[BRICK] - moves[i].out[BRICK] >= 1) && (pos->player[pos->turn].resources[LUMBER] + moves[i].in[LUMBER] - moves[i].out[LUMBER] >= 1))
-					continue;
-
-				if (has_reachable && (pos->player[pos->turn].resources[BRICK] + moves[i].in[BRICK] - moves[i].out[BRICK] >= 1) && (pos->player[pos->turn].resources[LUMBER] + moves[i].in[LUMBER] - moves[i].out[LUMBER] >= 1) && (pos->player[pos->turn].resources[GRAIN] + moves[i].in[GRAIN] - moves[i].out[GRAIN] >= 1) && (pos->player[pos->turn].resources[WOOL] + moves[i].in[WOOL] - moves[i].out[WOOL] >= 1))
-					continue;
-
-				if (pos->player[pos->turn].settlement && (pos->player[pos->turn].resources[ORE] + moves[i].in[ORE] - moves[i].out[ORE] >= 3) && (pos->player[pos->turn].resources[GRAIN] + moves[i].in[GRAIN] - moves[i].out[GRAIN] >= 2))
-					continue;
-
-				memcpy(&moves[i], &moves[n - 1], sizeof(moves[i]));
-				n--;
-				i--;
+		/* If we can build either a settlement or a city, then do that. */
+		int can_build_settlement_or_city = 0;
+		for (size_t i = 0; i < n; i++) {
+			if (moves[i].type == BUILD && (moves[i].building == CITY || moves[i].building == SETTLEMENT)) {
+				can_build_settlement_or_city = 1;
+				break;
 			}
+		}
+
+		if (can_build_settlement_or_city) {
+			for (size_t i = 0; i < n; i++) {
+				if (moves[i].type != BUILD || !(moves[i].building == CITY || moves[i].building == SETTLEMENT)) {
+					memcpy(&moves[i], &moves[n - 1], sizeof(moves[i]));
+					n--;
+					i--;
+				}
+			}
+		}
+
+		/* Only allow trades which immediately make us able to build. */
+		for (size_t i = 0; i < n; i++) {
+			if (moves[i].type != TRADE)
+				continue;
+
+			if (!has_reachable && (pos->player[pos->turn].resources[BRICK] + moves[i].in[BRICK] - moves[i].out[BRICK] >= 1) && (pos->player[pos->turn].resources[LUMBER] + moves[i].in[LUMBER] - moves[i].out[LUMBER] >= 1))
+				continue;
+
+			if (has_reachable && (pos->player[pos->turn].resources[BRICK] + moves[i].in[BRICK] - moves[i].out[BRICK] >= 1) && (pos->player[pos->turn].resources[LUMBER] + moves[i].in[LUMBER] - moves[i].out[LUMBER] >= 1) && (pos->player[pos->turn].resources[GRAIN] + moves[i].in[GRAIN] - moves[i].out[GRAIN] >= 1) && (pos->player[pos->turn].resources[WOOL] + moves[i].in[WOOL] - moves[i].out[WOOL] >= 1))
+				continue;
+
+			if (pos->player[pos->turn].settlement && (pos->player[pos->turn].resources[ORE] + moves[i].in[ORE] - moves[i].out[ORE] >= 3) && (pos->player[pos->turn].resources[GRAIN] + moves[i].in[GRAIN] - moves[i].out[GRAIN] >= 2))
+				continue;
+
+			memcpy(&moves[i], &moves[n - 1], sizeof(moves[i]));
+			n--;
+			i--;
 		}
 	}
 
-	int m;
-	struct move *move;
-	if (n == 0) {
-		pos->turn = 1 - pos->turn;
-		m = uniformint(seed, 1, 7) + uniformint(seed, 1, 7);
-
-		do_random(pos, m);
+	size_t j;
+	if (type == DICE) {
+		j = uniformint(seed, 0, 6) + uniformint(seed, 0, 6);
 	}
-	else {
-		int j = uniformint(seed, 0, n);
-
-		move = &moves[j];
-
-		do_move(pos, move);
+	else if (type == UNIFORM || type == CHOICE) {
+		j = uniformint(seed, 0, n);
 	}
+
+	do_move(pos, &moves[j]);
 
 	result = rollout(pos, seed, ply + 1);
 
-	if (n == 0) {
-		pos->turn = 1 - pos->turn;
+	undo_move(pos, &moves[j]);
 
-		undo_random(pos, m);
-	}
-	else {
-		undo_move(pos, move);
-	}
-
-	int flip = n == 0 || move->flip;
+	if (moves[j].flip)
+		result = -result;
 
 	free(moves);
-
-	if (flip)
-		return -result;
-	return result;
-}
-
-int mcts_internal(struct position *pos, uint64_t *seed, struct node *node, int ply);
-
-/* This is a dice roll */
-int mcts_random(struct position *pos, uint64_t *seed, struct node *node, int ply) {
-	int result;
-	if (node->n == 0) {
-		/* 2 - 12 */
-		node->nmoves = 11;
-
-		node->nodes = calloc(node->nmoves, sizeof(*node->nodes));
-
-		result = rollout(pos, seed, 0);
-	}
-	else {
-		size_t j = uniformint(seed, 1, 7) + uniformint(seed, 1, 7);
-		do_random(pos, j);
-
-		result = mcts_internal(pos, seed, &node->nodes[j - 2], ply + 1);
-
-		undo_random(pos, j);
-	}
-
-	node->n++;
-
-	if (result > 0)
-		node->w += 2;
-	if (result == 0)
-		node->w++;
 
 	return result;
 }
 
 int mcts_internal(struct position *pos, uint64_t *seed, struct node *node, int ply) {
 	int result;
-	if (node->n == 0) {
-		generate(pos, &node->moves, &node->nmoves);
+	if ((result = gameover(pos))) {
+	}
+	else if (node->n == 0) {
+		node->type = generate(pos, &node->moves, &node->nmoves);
 
 		node->nodes = calloc(node->nmoves, sizeof(*node->nodes));
 
 		result = rollout(pos, seed, 0);
 	}
-	else if ((result = gameover(pos))) {
-	}
 	else {
 		size_t j = 0;
-		double value;
-		for (size_t i = 0; i < node->nmoves; i++) {
-			int n = node->nodes[i].n;
-			int w = node->nodes[i].w;
-			int N = node->n;
+		if (node->type == DICE) {
+			j = uniformint(seed, 0, 6) + uniformint(seed, 0, 6);
+		}
+		else if (node->type == UNIFORM) {
+			j = uniformint(seed, 0, node->nmoves);
+		}
+		else if (node->type == CHOICE) {
+			double value;
+			for (size_t i = 0; i < node->nmoves; i++) {
+				int n = node->nodes[i].n;
+				int w = node->nodes[i].w;
+				int N = node->n;
 
-			double q = (double)w / (2 * n);
-			if (node->moves[i].flip)
-				q = 1.0 - q;
-			double value1 = n == 0 ? INFINITY : q + c * sqrt(log(N) / n);
-			if (i == 0 || value1 > value) {
-				j = i;
-				value = value1;
+				double q = (double)w / (2 * n);
+				if (node->moves[i].flip)
+					q = 1.0 - q;
+				double value1 = n == 0 ? INFINITY : q + c * sqrt(log(N) / n);
+				if (i == 0 || value1 > value) {
+					j = i;
+					value = value1;
+				}
 			}
 		}
 		do_move(pos, &node->moves[j]);
 
-		if (node->moves[j].type == ENDTURN) {
-			/* random dice roll */
-			result = mcts_random(pos, seed, &node->nodes[j], ply + 1);
-		}
-		else {
-			result = mcts_internal(pos, seed, &node->nodes[j], ply + 1);
-		}
+		result = mcts_internal(pos, seed, &node->nodes[j], ply + 1);
 
 		/* The child's result is from the other player's point of view. */
 		if (node->moves[j].flip)

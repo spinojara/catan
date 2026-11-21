@@ -67,9 +67,11 @@ int main(void) {
 			root = free_node(root, i);
 		}
 
+		int seven = pos.seven;
+
 		do_move(&pos, &move);
 
-		if ((move.flip && !setup)) {
+		if ((move.flip && !setup) && !seven) {
 			int m = uniformint(&seed, 1, 7) + uniformint(&seed, 1, 7);
 			printf("chance move: %d\n", m);
 

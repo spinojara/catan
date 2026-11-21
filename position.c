@@ -71,6 +71,9 @@ struct player {
 struct position {
 	int setup;
 
+	int seven;
+	int dice;
+
 	int turn;
 
 	struct player player[2];
