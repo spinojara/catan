@@ -304,6 +304,21 @@ int rollout(struct position *pos, uint64_t *seed, int ply) {
 				j = WOOL;
 		}
 	}
+	else if (type == DRAWRANDOM) {
+		int sum = pos->development[KNIGHT] + pos->development[ROADBUILDING] + pos->development[YEAROFPLENTY] + pos->development[MONOPOLY] + pos->development[VICTORYPOINT];
+		int i = uniformint(seed, 0, sum);
+
+		if (i < pos->development[KNIGHT])
+			j = KNIGHT;
+		else if (i < pos->development[KNIGHT] + pos->development[ROADBUILDING])
+			j = ROADBUILDING;
+		else if (i < pos->development[KNIGHT] + pos->development[ROADBUILDING] + pos->development[YEAROFPLENTY])
+			j = YEAROFPLENTY;
+		else if (i < pos->development[KNIGHT] + pos->development[ROADBUILDING] + pos->development[YEAROFPLENTY] + pos->development[MONOPOLY])
+			j = MONOPOLY;
+		else
+			j = VICTORYPOINT;
+	}
 	else if (type == CHOICE) {
 		j = uniformint(seed, 0, n);
 	}
@@ -365,6 +380,21 @@ int mcts_internal(struct position *pos, uint64_t *seed, struct node *node, int p
 				else
 					j = WOOL;
 			}
+		}
+		else if (node->type == DRAWRANDOM) {
+			int sum = pos->development[KNIGHT] + pos->development[ROADBUILDING] + pos->development[YEAROFPLENTY] + pos->development[MONOPOLY] + pos->development[VICTORYPOINT];
+			int i = uniformint(seed, 0, sum);
+
+			if (i < pos->development[KNIGHT])
+				j = KNIGHT;
+			else if (i < pos->development[KNIGHT] + pos->development[ROADBUILDING])
+				j = ROADBUILDING;
+			else if (i < pos->development[KNIGHT] + pos->development[ROADBUILDING] + pos->development[YEAROFPLENTY])
+				j = YEAROFPLENTY;
+			else if (i < pos->development[KNIGHT] + pos->development[ROADBUILDING] + pos->development[YEAROFPLENTY] + pos->development[MONOPOLY])
+				j = MONOPOLY;
+			else
+				j = VICTORYPOINT;
 		}
 		else if (node->type == CHOICE) {
 			double value;

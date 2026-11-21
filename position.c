@@ -7,6 +7,14 @@
 #define MAX_ROADS 72
 #define MAX_SETTLEMENTS 54
 
+enum {
+	KNIGHT,
+	ROADBUILDING,
+	YEAROFPLENTY,
+	MONOPOLY,
+	VICTORYPOINT,
+	ALLCARDS,
+};
 
 enum {
 	BRICK,
@@ -69,6 +77,10 @@ struct player {
 	int score;
 
 	int longestroad;
+
+	int knights;
+
+	int development[ALLCARDS];
 };
 
 struct position {
@@ -76,6 +88,7 @@ struct position {
 
 	int seven;
 	int dice;
+	int drawcard;
 
 	int robber;
 
@@ -88,6 +101,8 @@ struct position {
 	struct rtile rtiles[MAX_ROADS];
 
 	struct smtile *common_smtile[MAX_ROADS][MAX_ROADS];
+
+	int development[ALLCARDS];
 };
 
 char *resource_to_string(int resource) {
@@ -297,6 +312,12 @@ void position_init(struct position *pos) {
 			}
 		}
 	}
+
+	pos->development[KNIGHT] = 14;
+	pos->development[ROADBUILDING] = 2;
+	pos->development[YEAROFPLENTY] = 2;
+	pos->development[MONOPOLY] = 2;
+	pos->development[VICTORYPOINT] = 5;
 }
 
 void randomize_position(struct position *pos, uint64_t *seed) {
