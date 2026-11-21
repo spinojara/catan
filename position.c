@@ -26,14 +26,19 @@ struct smtile {
 	/* Blocked by nerby settlement. */
 	int blocked;
 
+	int reachable[2];
+
 	/* One more so that we end with NULL. */
 	struct tile *tiles[4];
+	struct rtile *rtiles[4];
 };
 
 /* road tile */
 struct rtile {
 	int player;
 	int road;
+
+	int reachable[2];
 
 	struct smtile *smtiles[3];
 	struct rtile *rtiles[5];
@@ -47,9 +52,17 @@ struct tile {
 
 struct player {
 	int resources[DESERT];
+
+	int road;
+	int settlement;
+	int city;
+
+	int score;
 };
 
 struct position {
+	int setup;
+
 	int turn;
 
 	struct player player[2];
@@ -232,6 +245,21 @@ void position_init(struct position *pos) {
 				rtile->rtiles[n++] = &pos->rtiles[s];
 		}
 	}
+
+	for (int s = 0; s < MAX_SETTLEMENTS; s++) {
+		int n = 0;
+		struct smtile *smtile = &pos->smtiles[s];
+		for (int r = 0; r < MAX_ROADS; r++) {
+			struct rtile *rtile = &pos->rtiles[r];
+
+			for (int i = 0; rtile->smtiles[i]; i++) {
+				if (rtile->smtiles[i] == smtile)
+					smtile->rtiles[n++] = rtile;
+			}
+		}
+	}
+
+	pos->setup = 1;
 }
 
 void randomize_position(struct position *pos) {
@@ -255,7 +283,6 @@ void randomize_position(struct position *pos) {
 		numbers[j] = a;
 	}
 
-
 	int desert = rand() % MAX_TILES;
 
 	for (int i = 0; i < MAX_TILES; i++) {
@@ -271,4 +298,16 @@ void randomize_position(struct position *pos) {
 			pos->tiles[i].robber = 0;
 		}
 	}
+
+	pos->turn = 1;
+}
+
+int gameover(struct position *pos) {
+	if (pos->player[pos->turn].score >= 8) {
+		return 1;
+	}
+	else if (pos->player[1 - pos->turn].score >= 8) {
+		return -1;
+	}
+	return 0;
 }
