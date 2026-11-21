@@ -111,6 +111,7 @@ struct position {
 	int development[ALLCARDS];
 
 	int biggestarmy;
+	int longestroad;
 };
 
 const char *development_to_string(int card) {
@@ -344,6 +345,7 @@ void position_init(struct position *pos) {
 	pos->development[VICTORYPOINT] = 5;
 
 	pos->biggestarmy = -1;
+	pos->longestroad = -1;
 }
 
 void randomize_position(struct position *pos, uint64_t *seed) {
@@ -393,9 +395,41 @@ int gameover(struct position *pos) {
 	if (pos->biggestarmy != -1)
 		score[pos->biggestarmy] += 2;
 
+	if (pos->longestroad != -1)
+		score[pos->longestroad] += 2;
+
 	if (score[pos->turn] >= 10)
 		return 1;
 	else if (score[1 - pos->turn] >= 10)
 		return -1;
 	return 0;
+}
+
+int longest_road_from(struct position *pos, int player, struct smtile *v, char used[MAX_ROADS]) {
+	int best = 0;
+	for (int i = 0; v->rtiles[i]; i++) {
+		struct rtile *r = v->rtiles[i];
+		if (!r->road || r->player != player || used[r->index])
+			continue;
+
+		struct smtile *next = r->smtiles[0] == v ? r->smtiles[1] : r->smtiles[0];
+		int len = 1;
+		used[r->index] = 1;
+		if (!((next->settlement || next->city) && next->player != player))
+			len += longest_road_from(pos, player, next, used);
+		used[r->index] = 0;
+
+		best = max(best, len);
+	}
+	return best;
+}
+
+int compute_longest_road(struct position *pos, int player) {
+	int best = 0;
+	char used[MAX_ROADS] = { 0 };
+	for (int s = 0; s < MAX_SETTLEMENTS; s++) {
+		best = max(best, longest_road_from(pos, player, &pos->smtiles[s], used));
+	}
+
+	return best;
 }

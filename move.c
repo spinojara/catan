@@ -62,6 +62,7 @@ struct move {
 
 	/* Old longest road. */
 	int prevroad[2];
+	int prevlongestroad;
 	int prevarmy;
 
 	/* Draw a development card. */
@@ -347,6 +348,8 @@ void do_roadbuilding(struct position *pos, struct move *move) {
 		move->rtile1->smtiles[i]->reachable[pos->turn]++;
 
 	pos->player[pos->turn].road += 2;
+
+	pos->player[pos->turn].longestroad = compute_longest_road(pos, pos->turn);
 }
 
 void do_monopoly(struct position *pos, struct move *move) {
@@ -440,6 +443,8 @@ void do_build(struct position *pos, struct move *move) {
 		pos->player[pos->turn].resources[LUMBER]--;
 
 		pos->player[pos->turn].road++;
+
+		pos->player[pos->turn].longestroad = compute_longest_road(pos, pos->turn);
 	}
 	else if (move->building == CITY || move->building == SETTLEMENT) {
 		pos->player[pos->turn].score++;
@@ -464,6 +469,9 @@ void do_build(struct position *pos, struct move *move) {
 
 			for (int r = 0; move->smtile->rtiles[r]; r++)
 				move->smtile->rtiles[r]->reachable[1 - pos->turn] -= move->unreachable[r];
+
+			/* Maybe enemy road got cut off. */
+			pos->player[1 - pos->turn].longestroad = compute_longest_road(pos, 1 - pos->turn);
 		}
 
 		pos->player[pos->turn].settlement += (move->building == SETTLEMENT) - (move->building == CITY);
@@ -836,6 +844,9 @@ void undo_steal(struct position *pos, struct move *move) {
 
 void do_move(struct position *pos, struct move *move) {
 	move->prevarmy = pos->biggestarmy;
+	move->prevroad[0] = pos->player[0].longestroad;
+	move->prevroad[1] = pos->player[1].longestroad;
+	move->prevlongestroad = pos->longestroad;
 
 	switch (move->type) {
 	case BUILD:
@@ -886,15 +897,24 @@ void do_move(struct position *pos, struct move *move) {
 	if (move->flip)
 		pos->turn = 1 - pos->turn;
 
-	/* Only ending the turn rolls the dice. Discarding on a seven also
-	 * passes the turn, but must not.
-	 */
 	if (move->type == ENDTURN)
 		pos->dice = 1;
+
+	if (pos->longestroad != -1 && pos->player[pos->longestroad].longestroad < 5)
+		pos->longestroad = -1;
+
+	if (pos->player[0].longestroad >= 5 && pos->player[0].longestroad > pos->player[1].longestroad)
+		pos->longestroad = 0;
+
+	if (pos->player[1].longestroad >= 5 && pos->player[1].longestroad > pos->player[0].longestroad)
+		pos->longestroad = 1;
 }
 
 void undo_move(struct position *pos, struct move *move) {
 	pos->biggestarmy = move->prevarmy;
+	pos->player[0].longestroad = move->prevroad[0];
+	pos->player[1].longestroad = move->prevroad[1];
+	pos->longestroad = move->prevlongestroad;
 
 	/* Take back the dice roll that do_move queued up. */
 	if (move->type == ENDTURN)
