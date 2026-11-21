@@ -98,7 +98,7 @@ int reaches_free_spot(const struct rtile *rtile) {
 
 int rollout(struct position *pos, uint64_t *seed, int ply) {
 	if (ply >= MAX_ROLLOUT_PLIES)
-		return pos->player[pos->turn].score - pos->player[1 - pos->turn].score;
+		return points(pos, pos->turn) - points(pos, 1 - pos->turn);
 	int result;
 	if ((result = gameover(pos)))
 		return result;

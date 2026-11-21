@@ -389,18 +389,23 @@ void randomize_position(struct position *pos, uint64_t *seed) {
 	pos->turn = 1;
 }
 
+/* Victory points, including biggest army and longest road. */
+int points(const struct position *pos, int player) {
+	int score = pos->player[player].score;
+
+	if (pos->biggestarmy == player)
+		score += 2;
+
+	if (pos->longestroad == player)
+		score += 2;
+
+	return score;
+}
+
 int gameover(struct position *pos) {
-	int score[2] = { pos->player[0].score, pos->player[1].score };
-
-	if (pos->biggestarmy != -1)
-		score[pos->biggestarmy] += 2;
-
-	if (pos->longestroad != -1)
-		score[pos->longestroad] += 2;
-
-	if (score[pos->turn] >= 10)
+	if (points(pos, pos->turn) >= 10)
 		return 1;
-	else if (score[1 - pos->turn] >= 10)
+	else if (points(pos, 1 - pos->turn) >= 10)
 		return -1;
 	return 0;
 }
