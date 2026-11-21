@@ -62,6 +62,7 @@ struct move {
 
 	/* Old longest road. */
 	int prevroad[2];
+	int prevarmy;
 
 	/* Draw a development card. */
 	int development;
@@ -299,6 +300,9 @@ void do_knight(struct position *pos, struct move *move) {
 	pos->player[pos->turn].development[KNIGHT]--;
 	pos->played = 1;
 	pos->player[pos->turn].knights++;
+
+	if (pos->player[pos->turn].knights >= 3 && pos->player[pos->turn].knights > pos->player[1 - pos->turn].knights)
+		pos->biggestarmy = pos->turn;
 
 	/* We are now in the same situation as if we rolled a 7. */
 	pos->seven = 2;
@@ -831,6 +835,8 @@ void undo_steal(struct position *pos, struct move *move) {
 }
 
 void do_move(struct position *pos, struct move *move) {
+	move->prevarmy = pos->biggestarmy;
+
 	switch (move->type) {
 	case BUILD:
 		do_build(pos, move);
@@ -888,6 +894,8 @@ void do_move(struct position *pos, struct move *move) {
 }
 
 void undo_move(struct position *pos, struct move *move) {
+	pos->biggestarmy = move->prevarmy;
+
 	/* Take back the dice roll that do_move queued up. */
 	if (move->type == ENDTURN)
 		pos->dice = 0;

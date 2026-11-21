@@ -109,6 +109,8 @@ struct position {
 	struct smtile *common_smtile[MAX_ROADS][MAX_ROADS];
 
 	int development[ALLCARDS];
+
+	int biggestarmy;
 };
 
 const char *development_to_string(int card) {
@@ -340,6 +342,8 @@ void position_init(struct position *pos) {
 	pos->development[YEAROFPLENTY] = 2;
 	pos->development[MONOPOLY] = 2;
 	pos->development[VICTORYPOINT] = 5;
+
+	pos->biggestarmy = -1;
 }
 
 void randomize_position(struct position *pos, uint64_t *seed) {
@@ -384,11 +388,14 @@ void randomize_position(struct position *pos, uint64_t *seed) {
 }
 
 int gameover(struct position *pos) {
-	if (pos->player[pos->turn].score >= 8) {
+	int score[2] = { pos->player[0].score, pos->player[1].score };
+
+	if (pos->biggestarmy != -1)
+		score[pos->biggestarmy] += 2;
+
+	if (score[pos->turn] >= 10)
 		return 1;
-	}
-	else if (pos->player[1 - pos->turn].score >= 8) {
+	else if (score[1 - pos->turn] >= 10)
 		return -1;
-	}
 	return 0;
 }
