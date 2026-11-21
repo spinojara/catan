@@ -148,7 +148,27 @@ int rollout(struct position *pos, uint64_t *seed, int ply) {
 	if (type == DICE) {
 		j = uniformint(seed, 0, 6) + uniformint(seed, 0, 6);
 	}
-	else if (type == UNIFORM || type == CHOICE) {
+	else if (type == STEALRANDOM) {
+		struct player *them = &pos->player[1 - pos->turn];
+		int sum = them->resources[BRICK] + them->resources[LUMBER] + them->resources[GRAIN] + them->resources[ORE] + them->resources[WOOL];
+		if (!sum) {
+			j = DESERT;
+		}
+		else {
+			int i = uniformint(seed, 0, sum);
+			if (i < them->resources[BRICK])
+				j = BRICK;
+			else if (i < them->resources[BRICK] + them->resources[LUMBER])
+				j = LUMBER;
+			else if (i < them->resources[BRICK] + them->resources[LUMBER] + them->resources[ORE])
+				j = ORE;
+			else if (i < them->resources[BRICK] + them->resources[LUMBER] + them->resources[ORE] + them->resources[GRAIN])
+				j = GRAIN;
+			else
+				j = WOOL;
+		}
+	}
+	else if (type == CHOICE) {
 		j = uniformint(seed, 0, n);
 	}
 
@@ -182,8 +202,25 @@ int mcts_internal(struct position *pos, uint64_t *seed, struct node *node, int p
 		if (node->type == DICE) {
 			j = uniformint(seed, 0, 6) + uniformint(seed, 0, 6);
 		}
-		else if (node->type == UNIFORM) {
-			j = uniformint(seed, 0, node->nmoves);
+		else if (node->type == STEALRANDOM) {
+			struct player *them = &pos->player[1 - pos->turn];
+			int sum = them->resources[BRICK] + them->resources[LUMBER] + them->resources[GRAIN] + them->resources[ORE] + them->resources[WOOL];
+			if (!sum) {
+				j = DESERT;
+			}
+			else {
+				int i = uniformint(seed, 0, sum);
+				if (i < them->resources[BRICK])
+					j = BRICK;
+				else if (i < them->resources[BRICK] + them->resources[LUMBER])
+					j = LUMBER;
+				else if (i < them->resources[BRICK] + them->resources[LUMBER] + them->resources[ORE])
+					j = ORE;
+				else if (i < them->resources[BRICK] + them->resources[LUMBER] + them->resources[ORE] + them->resources[GRAIN])
+					j = GRAIN;
+				else
+					j = WOOL;
+			}
 		}
 		else if (node->type == CHOICE) {
 			double value;
@@ -270,6 +307,7 @@ void mcts(struct position *pos, int maxtime, struct node **root, uint64_t *seed,
 
 		print_move(pos, move);
 		printf(" (%lf, %d)\n", q, node->n);
+		break;
 	}
 
 	int bn = best_node(*root);

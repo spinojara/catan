@@ -6,11 +6,12 @@ enum {
 	SETUP = 0x10,
 	DISCARD = 0x20,
 	STEAL = 0x40,
+	ROBBER = 0x80,
 };
 
 enum {
 	CHOICE,
-	UNIFORM,
+	STEALRANDOM,
 	DICE,
 };
 
@@ -32,7 +33,7 @@ struct move {
 
 	int type;
 
-	/* Trade or discard cards. */
+	/* Trade, discard or stealing cards. */
 	int out[DESERT];
 	int in[DESERT];
 
@@ -45,16 +46,16 @@ struct move {
 	struct smtile *smtile;
 	struct rtile *rtile;
 
+	/* Robber. */
+	struct tile *tile;
+	struct tile *prevtile;
+
 	/* Random. */
 	int number;
 
 	/* Old longest road. */
 	int prevroad[2];
 };
-
-/* 2 <= n <= 12, distributed as 2, D6 */
-void generate_diceroll() {
-}
 
 void generate_setup(struct position *pos, struct move **moves, size_t *n) {
 	int flip = (pos->setup % 2) ? 1 : 0;
@@ -305,47 +306,38 @@ void undo_build(struct position *pos, struct move *move) {
 }
 
 void do_random(struct position *pos, int n) {
-	/* If we are already at a seven when a random move occurs, this is actually picking one of the other players cards. */
-	if (pos->seven) {
-	}
-	else {
-		if (n == 7) {
-			pos->seven = 0;
-		}
-		for (int i = 0; i < MAX_SETTLEMENTS; i++) {
-			if (pos->smtiles[i].city || pos->smtiles[i].settlement) {
-				for (int j = 0; pos->smtiles[i].tiles[j]; j++) {
-					if (pos->smtiles[i].tiles[j]->number == n && pos->smtiles[i].tiles[j]->type != DESERT && !pos->smtiles[i].tiles[j]->robber) {
-						pos->player[pos->smtiles[i].player].resources[pos->smtiles[i].tiles[j]->type] += 1 + pos->smtiles[i].city;
-					}
+	/* A seven starts the discard and steal phase, see generate. */
+	if (n == 7)
+		pos->seven = 4;
+
+	for (int i = 0; i < MAX_SETTLEMENTS; i++) {
+		if (pos->smtiles[i].city || pos->smtiles[i].settlement) {
+			for (int j = 0; pos->smtiles[i].tiles[j]; j++) {
+				if (pos->smtiles[i].tiles[j]->number == n && pos->smtiles[i].tiles[j]->type != DESERT && !pos->smtiles[i].tiles[j]->robber) {
+					pos->player[pos->smtiles[i].player].resources[pos->smtiles[i].tiles[j]->type] += 1 + pos->smtiles[i].city;
 				}
 			}
 		}
-
-		pos->dice = 0;
 	}
+
+	pos->dice = 0;
 }
 
 void undo_random(struct position *pos, int n) {
-	/* If we are already at a seven when a random move occurs, this is actually picking one of the other players cards. */
-	if (pos->seven) {
-	}
-	else {
-		if (n == 7) {
-			pos->seven = 0;
-		}
-		for (int i = 0; i < MAX_SETTLEMENTS; i++) {
-			if (pos->smtiles[i].city || pos->smtiles[i].settlement) {
-				for (int j = 0; pos->smtiles[i].tiles[j]; j++) {
-					if (pos->smtiles[i].tiles[j]->number == n && pos->smtiles[i].tiles[j]->type != DESERT && !pos->smtiles[i].tiles[j]->robber) {
-						pos->player[pos->smtiles[i].player].resources[pos->smtiles[i].tiles[j]->type] -= 1 + pos->smtiles[i].city;
-					}
+	if (n == 7)
+		pos->seven = 0;
+
+	for (int i = 0; i < MAX_SETTLEMENTS; i++) {
+		if (pos->smtiles[i].city || pos->smtiles[i].settlement) {
+			for (int j = 0; pos->smtiles[i].tiles[j]; j++) {
+				if (pos->smtiles[i].tiles[j]->number == n && pos->smtiles[i].tiles[j]->type != DESERT && !pos->smtiles[i].tiles[j]->robber) {
+					pos->player[pos->smtiles[i].player].resources[pos->smtiles[i].tiles[j]->type] -= 1 + pos->smtiles[i].city;
 				}
 			}
 		}
-
-		pos->dice = 1;
 	}
+
+	pos->dice = 1;
 }
 
 void do_trade(struct position *pos, struct move *move) {
@@ -358,7 +350,24 @@ void undo_trade(struct position *pos, struct move *move) {
 		pos->player[pos->turn].resources[r] -= move->in[r] - move->out[r];
 }
 
-void generate_seven(struct position *pos, struct move **moves, size_t *n) {
+/* Generate all steals, even if they are not possible. We will just not move into them later. */
+void generate_steal(struct position *pos, struct move **moves, size_t *n) {
+	(void)pos;
+	for (int r = 0; r < DESERT; r++) {
+		*moves = realloc(*moves, ++*n * sizeof(**moves));
+		(*moves)[*n - 1].type = STEAL;
+		memset((*moves)[*n - 1].in, 0, sizeof((*moves)[*n - 1].in));
+		(*moves)[*n - 1].in[r] = 1;
+		(*moves)[*n - 1].flip = 0;
+	}
+
+	*moves = realloc(*moves, ++*n * sizeof(**moves));
+	(*moves)[*n - 1].type = STEAL;
+	(*moves)[*n - 1].flip = 0;
+	memset((*moves)[*n - 1].in, 0, sizeof((*moves)[*n - 1].in));
+}
+
+void generate_discard(struct position *pos, struct move **moves, size_t *n) {
 	struct player *player = &pos->player[pos->turn];
 	int sum = player->resources[BRICK] + player->resources[LUMBER] + player->resources[GRAIN] + player->resources[WOOL] + player->resources[ORE];
 	if (sum <= 7) {
@@ -393,6 +402,31 @@ void generate_seven(struct position *pos, struct move **moves, size_t *n) {
 	}
 }
 
+void generate_robber(struct position *pos, struct move **moves, size_t *n) {
+	for (int t = 0; t < MAX_TILES; t++) {
+		if (pos->tiles[t].robber)
+			continue;
+		*moves = realloc(*moves, ++*n * sizeof(**moves));
+		(*moves)[*n - 1].type = ROBBER;
+		(*moves)[*n - 1].tile = &pos->tiles[t];
+		(*moves)[*n - 1].flip = 0;
+	}
+}
+
+void do_robber(struct position *pos, struct move *move) {
+	move->prevtile = &pos->tiles[pos->robber];
+
+	pos->tiles[pos->robber].robber = 0;
+	move->tile->robber = 1;
+	pos->robber = move->tile->index;
+}
+
+void undo_robber(struct position *pos, struct move *move) {
+	move->tile->robber = 0;
+	move->prevtile->robber = 1;
+	pos->robber = move->prevtile->index;
+}
+
 int generate(struct position *pos, struct move **moves, size_t *n) {
 	if (pos->dice) {
 		*n = 11;
@@ -406,7 +440,18 @@ int generate(struct position *pos, struct move **moves, size_t *n) {
 	}
 	else {
 		if (pos->seven) {
-			generate_seven(pos, moves, n);
+			switch (pos->seven) {
+			case 4:
+			case 3:
+				generate_discard(pos, moves, n);
+				return CHOICE;
+			case 2:
+				generate_robber(pos, moves, n);
+				return CHOICE;
+			case 1:
+				generate_steal(pos, moves, n);
+				return STEALRANDOM;
+			}
 		}
 		else if (pos->setup) {
 			generate_setup(pos, moves, n);
@@ -472,11 +517,33 @@ void undo_setup(struct position *pos, struct move *move) {
 void do_discard(struct position *pos, struct move *move) {
 	for (int r = 0; r < DESERT; r++)
 		pos->player[pos->turn].resources[r] -= move->out[r];
+
+	pos->seven--;
 }
 
 void undo_discard(struct position *pos, struct move *move) {
 	for (int r = 0; r < DESERT; r++)
 		pos->player[pos->turn].resources[r] += move->out[r];
+
+	pos->seven++;
+}
+
+void do_steal(struct position *pos, struct move *move) {
+	for (int r = 0; r < DESERT; r++) {
+		pos->player[pos->turn].resources[r] += move->in[r];
+		pos->player[1 - pos->turn].resources[r] -= move->in[r];
+	}
+
+	pos->seven--;
+}
+
+void undo_steal(struct position *pos, struct move *move) {
+	for (int r = 0; r < DESERT; r++) {
+		pos->player[pos->turn].resources[r] -= move->in[r];
+		pos->player[1 - pos->turn].resources[r] += move->in[r];
+	}
+
+	pos->seven++;
 }
 
 void do_move(struct position *pos, struct move *move) {
@@ -496,6 +563,12 @@ void do_move(struct position *pos, struct move *move) {
 	case RANDOM:
 		do_random(pos, move->number);
 		break;
+	case STEAL:
+		do_steal(pos, move);
+		break;
+	case ROBBER:
+		do_robber(pos, move);
+		break;
 	default:
 		break;
 	}
@@ -503,13 +576,16 @@ void do_move(struct position *pos, struct move *move) {
 	if (move->flip)
 		pos->turn = 1 - pos->turn;
 
-	if (move->flip && !pos->setup)
+	/* Only ending the turn rolls the dice. Discarding on a seven also
+	 * passes the turn, but must not.
+	 */
+	if (move->type == ENDTURN)
 		pos->dice = 1;
 }
 
 void undo_move(struct position *pos, struct move *move) {
 	/* Take back the dice roll that do_move queued up. */
-	if (move->flip && !pos->setup)
+	if (move->type == ENDTURN)
 		pos->dice = 0;
 
 	if (move->flip)
@@ -530,6 +606,12 @@ void undo_move(struct position *pos, struct move *move) {
 		break;
 	case RANDOM:
 		undo_random(pos, move->number);
+		break;
+	case STEAL:
+		undo_steal(pos, move);
+		break;
+	case ROBBER:
+		undo_robber(pos, move);
 		break;
 	default:
 		break;
@@ -588,6 +670,16 @@ void move_to_str(struct move *move, char str[256]) {
 
 		if (!discarded)
 			i += sprintf(str + i, " none");
+	}
+	else if (move->type == STEAL) {
+		int r;
+		for (r = 0; r < DESERT; r++)
+			if (move->in[r])
+				break;
+		i += sprintf(str + i, "steal %s", r == DESERT ? "none" : resource_to_string(r));
+	}
+	else if (move->type == ROBBER) {
+		i += sprintf(str + i, "robber %d", move->tile->index);
 	}
 }
 

@@ -74,6 +74,8 @@ struct position {
 	int seven;
 	int dice;
 
+	int robber;
+
 	int turn;
 
 	struct player player[2];
@@ -83,7 +85,6 @@ struct position {
 	struct rtile rtiles[MAX_ROADS];
 
 	struct smtile *common_smtile[MAX_ROADS][MAX_ROADS];
-
 };
 
 char *resource_to_string(int resource) {
@@ -322,6 +323,7 @@ void randomize_position(struct position *pos, uint64_t *seed) {
 			pos->tiles[i].number = 0;
 			pos->tiles[i].type = DESERT;
 			pos->tiles[i].robber = 1;
+			pos->robber = i;
 		}
 		else {
 			int realindex = i - (i > desert);
