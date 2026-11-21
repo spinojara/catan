@@ -65,6 +65,10 @@ struct move {
 
 	/* Draw a development card. */
 	int development;
+
+	/* End turn, so that undo can restore what was bought and played. */
+	int bought[ALLCARDS];
+	int played;
 };
 
 /* Add a move to the list, growing it in chunks instead of one move at a
@@ -213,17 +217,19 @@ void generate_build(struct position *pos, struct move **moves, size_t *n) {
 }
 
 void generate_play(struct position *pos, struct move **moves, size_t *n) {
-	int has_already_played = 0;
-	if (has_already_played)
+	/* Only one development card can be played each turn, and not one
+	 * that was bought this turn.
+	 */
+	if (pos->played)
 		return;
 
-	if (pos->player[pos->turn].development[KNIGHT]) {
+	if (pos->player[pos->turn].development[KNIGHT] > pos->bought[KNIGHT]) {
 		struct move *move = add_move(moves, n);
 		move->flip = 0;
 		move->type = PLAYKNIGHT;
 	}
 
-	if (pos->player[pos->turn].development[YEAROFPLENTY]) {
+	if (pos->player[pos->turn].development[YEAROFPLENTY] > pos->bought[YEAROFPLENTY]) {
 		for (int r1 = 0; r1 < DESERT; r1++) {
 			for (int r2 = r1; r2 < DESERT; r2++) {
 				struct move *move = add_move(moves, n);
@@ -237,7 +243,7 @@ void generate_play(struct position *pos, struct move **moves, size_t *n) {
 	}
 
 	/* TODO: r, r1 = r1, r */
-	if (pos->player[pos->turn].development[ROADBUILDING] && pos->player[pos->turn].road <= 13) {
+	if (pos->player[pos->turn].development[ROADBUILDING] > pos->bought[ROADBUILDING] && pos->player[pos->turn].road <= 13) {
 		for (int r = 0; r < MAX_ROADS; r++) {
 			struct rtile *rtile = &pos->rtiles[r];
 			if (!rtile->road && rtile->reachable[pos->turn]) {
@@ -278,7 +284,7 @@ void generate_play(struct position *pos, struct move **moves, size_t *n) {
 		}
 	}
 
-	if (pos->player[pos->turn].development[MONOPOLY]) {
+	if (pos->player[pos->turn].development[MONOPOLY] > pos->bought[MONOPOLY]) {
 		for (int r = 0; r < DESERT; r++) {
 			struct move *move = add_move(moves, n);
 			move->flip = 0;
@@ -290,6 +296,8 @@ void generate_play(struct position *pos, struct move **moves, size_t *n) {
 
 void do_knight(struct position *pos, struct move *move) {
 	(void)move;
+	pos->player[pos->turn].development[KNIGHT]--;
+	pos->played = 1;
 	pos->player[pos->turn].knights++;
 
 	/* We are now in the same situation as if we rolled a 7. */
@@ -297,11 +305,17 @@ void do_knight(struct position *pos, struct move *move) {
 }
 
 void do_yearofplenty(struct position *pos, struct move *move) {
+	pos->player[pos->turn].development[YEAROFPLENTY]--;
+	pos->played = 1;
+
 	for (int r = 0; r < DESERT; r++)
 		pos->player[pos->turn].resources[r] += move->in[r];
 }
 
 void do_roadbuilding(struct position *pos, struct move *move) {
+	pos->player[pos->turn].development[ROADBUILDING]--;
+	pos->played = 1;
+
 	move->rtile->road = 1;
 	move->rtile->player = pos->turn;
 
@@ -332,6 +346,9 @@ void do_roadbuilding(struct position *pos, struct move *move) {
 }
 
 void do_monopoly(struct position *pos, struct move *move) {
+	pos->player[pos->turn].development[MONOPOLY]--;
+	pos->played = 1;
+
 	move->in[move->number] = pos->player[1 - pos->turn].resources[move->number];
 	pos->player[pos->turn].resources[move->number] += pos->player[1 - pos->turn].resources[move->number];
 	pos->player[1 - pos->turn].resources[move->number] = 0;
@@ -339,17 +356,25 @@ void do_monopoly(struct position *pos, struct move *move) {
 
 void undo_knight(struct position *pos, struct move *move) {
 	(void)move;
+	pos->player[pos->turn].development[KNIGHT]++;
+	pos->played = 0;
 	pos->player[pos->turn].knights--;
 
 	pos->seven = 0;
 }
 
 void undo_yearofplenty(struct position *pos, struct move *move) {
+	pos->player[pos->turn].development[YEAROFPLENTY]++;
+	pos->played = 0;
+
 	for (int r = 0; r < DESERT; r++)
 		pos->player[pos->turn].resources[r] -= move->in[r];
 }
 
 void undo_roadbuilding(struct position *pos, struct move *move) {
+	pos->player[pos->turn].development[ROADBUILDING]++;
+	pos->played = 0;
+
 	move->rtile->road = 0;
 
 	/* A road is only reachable if it was not blocked by a settlement/city. */
@@ -378,6 +403,9 @@ void undo_roadbuilding(struct position *pos, struct move *move) {
 }
 
 void undo_monopoly(struct position *pos, struct move *move) {
+	pos->player[pos->turn].development[MONOPOLY]++;
+	pos->played = 0;
+
 	pos->player[pos->turn].resources[move->number] -= move->in[move->number];
 	pos->player[1 - pos->turn].resources[move->number] = move->in[move->number];
 }
@@ -642,6 +670,7 @@ void undo_robber(struct position *pos, struct move *move) {
 void do_draw(struct position *pos, struct move *move) {
 	pos->drawcard = 0;
 
+	pos->bought[move->development]++;
 	pos->player[pos->turn].development[move->development]++;
 	pos->development[move->development]--;
 
@@ -652,11 +681,25 @@ void do_draw(struct position *pos, struct move *move) {
 void undo_draw(struct position *pos, struct move *move) {
 	pos->drawcard = 1;
 
+	pos->bought[move->development]--;
 	pos->player[pos->turn].development[move->development]--;
 	pos->development[move->development]++;
 
 	if (move->development == VICTORYPOINT)
 		pos->player[pos->turn].score--;
+}
+
+/* The next player can play everything, and has not played anything yet. */
+void do_endturn(struct position *pos, struct move *move) {
+	memcpy(move->bought, pos->bought, sizeof(move->bought));
+	memset(pos->bought, 0, sizeof(pos->bought));
+	move->played = pos->played;
+	pos->played = 0;
+}
+
+void undo_endturn(struct position *pos, struct move *move) {
+	memcpy(pos->bought, move->bought, sizeof(pos->bought));
+	pos->played = move->played;
 }
 
 int generate(struct position *pos, struct move **moves, size_t *n) {
@@ -674,6 +717,7 @@ int generate(struct position *pos, struct move **moves, size_t *n) {
 			struct move *move = add_move(moves, n);
 			move->type = DRAW;
 			move->development = card;
+			move->flip = 0;
 		}
 		return DRAWRANDOM;
 	}
@@ -825,6 +869,7 @@ void do_move(struct position *pos, struct move *move) {
 		do_monopoly(pos, move);
 		break;
 	case ENDTURN:
+		do_endturn(pos, move);
 		break;
 	default:
 		printf("%d\n", move->type);
@@ -886,6 +931,9 @@ void undo_move(struct position *pos, struct move *move) {
 		break;
 	case PLAYMONOPOLY:
 		undo_monopoly(pos, move);
+		break;
+	case ENDTURN:
+		undo_endturn(pos, move);
 		break;
 	default:
 		break;
@@ -954,6 +1002,24 @@ void move_to_str(struct move *move, char str[256]) {
 	}
 	else if (move->type == ROBBER) {
 		i += sprintf(str + i, "robber %d", move->tile->index);
+	}
+	else if (move->type == DRAW) {
+		i += sprintf(str + i, "draw %s", development_to_string(move->development));
+	}
+	else if (move->type == PLAYKNIGHT) {
+		i += sprintf(str + i, "play knight");
+	}
+	else if (move->type == PLAYROADBUILDING) {
+		i += sprintf(str + i, "play road building %d %d", move->rtile->index, move->rtile1->index);
+	}
+	else if (move->type == PLAYYEAROFPLENTY) {
+		i += sprintf(str + i, "play year of plenty");
+		for (int r = 0; r < DESERT; r++)
+			if (move->in[r])
+				i += sprintf(str + i, " %d %s", move->in[r], resource_to_string(r));
+	}
+	else if (move->type == PLAYMONOPOLY) {
+		i += sprintf(str + i, "play monopoly %s", resource_to_string(move->number));
 	}
 }
 

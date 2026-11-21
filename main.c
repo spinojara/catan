@@ -45,6 +45,38 @@ int main(void) {
 			free(root);
 			root = next;
 		}
+		/* Drawing a development card is random too. */
+		else if (pos.drawcard) {
+			struct move *moves = NULL;
+			size_t n = 0;
+			generate(&pos, &moves, &n);
+
+			int sum = pos.development[KNIGHT] + pos.development[ROADBUILDING] + pos.development[YEAROFPLENTY] + pos.development[MONOPOLY] + pos.development[VICTORYPOINT];
+			int i = uniformint(&seed, 0, sum);
+			size_t j;
+			if (i < pos.development[KNIGHT])
+				j = KNIGHT;
+			else if (i < pos.development[KNIGHT] + pos.development[ROADBUILDING])
+				j = ROADBUILDING;
+			else if (i < pos.development[KNIGHT] + pos.development[ROADBUILDING] + pos.development[YEAROFPLENTY])
+				j = YEAROFPLENTY;
+			else if (i < pos.development[KNIGHT] + pos.development[ROADBUILDING] + pos.development[YEAROFPLENTY] + pos.development[MONOPOLY])
+				j = MONOPOLY;
+			else
+				j = VICTORYPOINT;
+
+			printf("move: ");
+			print_move(&pos, &moves[j]);
+			printf("\n");
+
+			do_move(&pos, &moves[j]);
+
+			struct node *next = free_node(root, j);
+			free(root);
+			root = next;
+
+			free(moves);
+		}
 		/* This is the steal phase which is random. */
 		else if (pos.seven == 1) {
 			struct move *moves = NULL;

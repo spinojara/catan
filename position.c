@@ -90,6 +90,12 @@ struct position {
 	int dice;
 	int drawcard;
 
+	/* Development cards bought this turn can not be played until the
+	 * next turn, and only one card can be played each turn.
+	 */
+	int bought[ALLCARDS];
+	int played;
+
 	int robber;
 
 	int turn;
@@ -104,6 +110,22 @@ struct position {
 
 	int development[ALLCARDS];
 };
+
+const char *development_to_string(int card) {
+	switch (card) {
+	case KNIGHT:
+		return "knight";
+	case ROADBUILDING:
+		return "road building";
+	case YEAROFPLENTY:
+		return "year of plenty";
+	case MONOPOLY:
+		return "monopoly";
+	case VICTORYPOINT:
+		return "victory point";
+	}
+	return "";
+}
 
 char *resource_to_string(int resource) {
 	static char str[7];
