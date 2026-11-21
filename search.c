@@ -180,6 +180,15 @@ int rollout(struct position *pos, uint64_t *seed, int ply) {
 				}
 			}
 		}
+
+		/* Filter buying development cards. */
+		for (size_t i = 0; i < n; i++) {
+			if (moves[i].type == BUILD && moves[i].building == DEVELOPMENT) {
+				memcpy(&moves[i], &moves[n - 1], sizeof(moves[i]));
+				n--;
+				i--;
+			}
+		}
 	}
 
 	size_t j;
