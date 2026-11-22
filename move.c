@@ -130,6 +130,36 @@ void generate_trade(const struct position *pos, struct move **moves, size_t *n) 
 				move->flip = 0;
 			}
 		}
+
+		if (player->resources[resource] >= 3 && player->generalharbor) {
+			for (int r2 = 0; r2 < DESERT; r2++) {
+				struct move *move = add_move(moves, n);
+				memset(move->out, 0, sizeof(move->out));
+				memset(move->in, 0, sizeof(move->in));
+
+				move->out[resource] = 3;
+
+				move->in[r2] = 1;
+
+				move->type = TRADE;
+				move->flip = 0;
+			}
+		}
+
+		if (player->resources[resource] >= 2 && player->harbor[resource]) {
+			for (int r2 = 0; r2 < DESERT; r2++) {
+				struct move *move = add_move(moves, n);
+				memset(move->out, 0, sizeof(move->out));
+				memset(move->in, 0, sizeof(move->in));
+
+				move->out[resource] = 2;
+
+				move->in[r2] = 1;
+
+				move->type = TRADE;
+				move->flip = 0;
+			}
+		}
 	}
 }
 
@@ -450,6 +480,14 @@ void do_build(struct position *pos, struct move *move) {
 
 			/* Maybe enemy road got cut off. */
 			pos->player[1 - pos->turn].longestroad = compute_longest_road(pos, 1 - pos->turn);
+
+			if (move->smtile->harbor != -1) {
+				/* This is a general 3:1 harbor. */
+				if (move->smtile->harbor == DESERT)
+					pos->player[pos->turn].generalharbor++;
+				else
+					pos->player[pos->turn].harbor[move->smtile->harbor]++;
+			}
 		}
 
 		pos->player[pos->turn].settlement += (move->building == SETTLEMENT) - (move->building == CITY);
@@ -507,6 +545,13 @@ void undo_build(struct position *pos, struct move *move) {
 
 			for (int r = 0; move->smtile->rtiles[r]; r++)
 				move->smtile->rtiles[r]->reachable[1 - pos->turn] += move->unreachable[r];
+
+			if (move->smtile->harbor != -1) {
+				if (move->smtile->harbor == DESERT)
+					pos->player[pos->turn].generalharbor--;
+				else
+					pos->player[pos->turn].harbor[move->smtile->harbor]--;
+			}
 		}
 
 		pos->player[pos->turn].settlement -= (move->building == SETTLEMENT) - (move->building == CITY);

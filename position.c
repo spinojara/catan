@@ -41,6 +41,8 @@ struct smtile {
 	/* One more so that we end with NULL. */
 	struct tile *tiles[4];
 	struct rtile *rtiles[4];
+
+	int harbor;
 };
 
 /* road tile */
@@ -81,6 +83,9 @@ struct player {
 	int knights;
 
 	int development[ALLCARDS];
+
+	int harbor[DESERT];
+	int generalharbor;
 };
 
 struct position {
@@ -311,6 +316,7 @@ void position_init(struct position *pos) {
 	for (int s = 0; s < MAX_SETTLEMENTS; s++) {
 		int n = 0;
 		struct smtile *smtile = &pos->smtiles[s];
+		smtile->harbor = -1;
 		smtile->index = s;
 		for (int r = 0; r < MAX_ROADS; r++) {
 			struct rtile *rtile = &pos->rtiles[r];
@@ -346,6 +352,36 @@ void position_init(struct position *pos) {
 
 	pos->biggestarmy = -1;
 	pos->longestroad = -1;
+
+	/* Desert harbor is general 3:1. */
+	pos->smtiles[0].harbor = DESERT;
+	pos->smtiles[3].harbor = DESERT;
+
+	pos->smtiles[26].harbor = DESERT;
+	pos->smtiles[32].harbor = DESERT;
+
+	pos->smtiles[49].harbor = DESERT;
+	pos->smtiles[52].harbor = DESERT;
+
+	pos->smtiles[47].harbor = DESERT;
+	pos->smtiles[51].harbor = DESERT;
+
+
+
+	pos->smtiles[1].harbor = GRAIN;
+	pos->smtiles[5].harbor = GRAIN;
+
+	pos->smtiles[10].harbor = ORE;
+	pos->smtiles[15].harbor = ORE;
+
+	pos->smtiles[42].harbor = WOOL;
+	pos->smtiles[46].harbor = WOOL;
+
+	pos->smtiles[33].harbor = BRICK;
+	pos->smtiles[38].harbor = BRICK;
+
+	pos->smtiles[11].harbor = LUMBER;
+	pos->smtiles[16].harbor = LUMBER;
 }
 
 void randomize_position(struct position *pos, uint64_t *seed) {

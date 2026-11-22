@@ -96,6 +96,17 @@ int reaches_free_spot(const struct rtile *rtile) {
 	return 0;
 }
 
+/* How many cards of resource the player needs to trade for 1 at their best
+ * harbor, or with the bank.
+ */
+int trade_rate(const struct player *player, int resource) {
+	if (player->harbor[resource])
+		return 2;
+	if (player->generalharbor)
+		return 3;
+	return 4;
+}
+
 int rollout(struct position *pos, uint64_t *seed, int ply) {
 	if (ply >= MAX_ROLLOUT_PLIES)
 		return points(pos, pos->turn) - points(pos, 1 - pos->turn);
@@ -183,8 +194,8 @@ int rollout(struct position *pos, uint64_t *seed, int ply) {
 
 		/* Only allow trades which bring a build that is not possible
 		 * yet closer, such that the cards left over can still be traded
-		 * for the rest of it, and which only take cards we are missing.
-		 * Anything else throws away 3 cards for nothing.
+		 * for the rest of it, and which only take cards we are missing,
+		 * at our best rate. Anything else throws away cards for nothing.
 		 */
 		const struct player *player = &pos->player[pos->turn];
 		int can_build_road = 0;
@@ -215,13 +226,15 @@ int rollout(struct position *pos, uint64_t *seed, int ply) {
 
 				int missing_before = 0, missing_after = 0, too_much = 0, trades_left = 0;
 				for (int r = 0; r < DESERT; r++) {
+					int rate = trade_rate(player, r);
 					int before = player->resources[r];
 					int after = before + moves[i].in[r] - moves[i].out[r];
 					int missing = max(0, cost[b][r] - before);
 					missing_before += missing;
 					missing_after += max(0, cost[b][r] - after);
 					too_much |= moves[i].in[r] > missing;
-					trades_left += max(0, after - cost[b][r]) / 4;
+					too_much |= moves[i].out[r] && moves[i].out[r] != rate;
+					trades_left += max(0, after - cost[b][r]) / rate;
 				}
 
 				keep = missing_after < missing_before && missing_after <= trades_left && !too_much;
