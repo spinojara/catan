@@ -389,7 +389,6 @@ void randomize_position(struct position *pos, uint64_t *seed) {
 	pos->turn = 1;
 }
 
-/* Victory points, including biggest army and longest road. */
 int points(const struct position *pos, int player) {
 	int score = pos->player[player].score;
 
@@ -400,6 +399,38 @@ int points(const struct position *pos, int player) {
 		score += 2;
 
 	return score;
+}
+
+/* Read the board from stdin as 19 lines of "number resource" like this:
+ * 6 lumber
+ * 3 brick
+ * 8 brick
+ * 10 lumber
+ * ...
+ */
+void read_board(struct position *pos) {
+	for (int t = 0; t < MAX_TILES; t++) {
+		char line[256], name[16];
+		if (!fgets(line, sizeof(line), stdin))
+			exit(54);
+		sscanf(line, "%d %15s", &pos->tiles[t].number, name);
+
+		for (pos->tiles[t].type = BRICK; pos->tiles[t].type < DESERT; pos->tiles[t].type++)
+			if (!strcmp(name, resource_to_string(pos->tiles[t].type)))
+				break;
+
+		pos->tiles[t].robber = pos->tiles[t].type == DESERT;
+		if (pos->tiles[t].robber)
+			pos->robber = t;
+	}
+
+	pos->turn = 1;
+}
+
+/* Print board in machine readable format. */
+void print_board(struct position *pos) {
+	for (int t = 0; t < MAX_TILES; t++)
+		printf("%d %s\n", pos->tiles[t].number, resource_to_string(pos->tiles[t].type));
 }
 
 int gameover(struct position *pos) {

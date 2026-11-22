@@ -4,7 +4,7 @@
 #define TPPERSEC 1000000000l
 #define TPPERMS     1000000l
 
-const double c = 1.41;
+double c = 1.41;
 
 int64_t time_now(void) {
 	struct timespec tp;
@@ -181,8 +181,9 @@ int rollout(struct position *pos, uint64_t *seed, int ply) {
 			}
 		}
 
-		/* Only allow trades which make a build possible that was not
-		 * possible before, and which only take cards we are missing.
+		/* Only allow trades which bring a build that is not possible
+		 * yet closer, such that the cards left over can still be traded
+		 * for the rest of it, and which only take cards we are missing.
 		 * Anything else throws away 3 cards for nothing.
 		 */
 		const struct player *player = &pos->player[pos->turn];
@@ -212,7 +213,7 @@ int rollout(struct position *pos, uint64_t *seed, int ply) {
 				if (!want[b])
 					continue;
 
-				int missing_before = 0, missing_after = 0, too_much = 0;
+				int missing_before = 0, missing_after = 0, too_much = 0, trades_left = 0;
 				for (int r = 0; r < DESERT; r++) {
 					int before = player->resources[r];
 					int after = before + moves[i].in[r] - moves[i].out[r];
@@ -220,9 +221,10 @@ int rollout(struct position *pos, uint64_t *seed, int ply) {
 					missing_before += missing;
 					missing_after += max(0, cost[b][r] - after);
 					too_much |= moves[i].in[r] > missing;
+					trades_left += max(0, after - cost[b][r]) / 4;
 				}
 
-				keep = missing_before && !missing_after && !too_much;
+				keep = missing_after < missing_before && missing_after <= trades_left && !too_much;
 			}
 
 			if (!keep) {
@@ -434,7 +436,8 @@ int mcts_internal(struct position *pos, uint64_t *seed, struct node *node, int p
 	return result;
 }
 
-void mcts(struct position *pos, int maxtime, struct node **root, uint64_t *seed, struct move *return_move) {
+/* How the chosen move is rated is printed to info. */
+void mcts(struct position *pos, int maxtime, struct node **root, uint64_t *seed, struct move *return_move, FILE *info) {
 	int64_t starttime = time_now();
 	int64_t endtime = starttime + maxtime * TPPERMS;
 	int64_t lastinfotime = starttime;
@@ -479,8 +482,9 @@ void mcts(struct position *pos, int maxtime, struct node **root, uint64_t *seed,
 		if (move->flip)
 			q = 1.0 - q;
 
-		print_move(pos, move);
-		printf(" (%lf, %d)\n", q, node->n);
+		char str[256];
+		move_to_str(move, str);
+		fprintf(info, "move %s (%lf, %d)\n", str, q, node->n);
 		break;
 	}
 

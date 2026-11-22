@@ -110,48 +110,26 @@ void generate_setup(struct position *pos, struct move **moves, size_t *n) {
 
 void generate_trade(const struct position *pos, struct move **moves, size_t *n) {
 	const struct player *player = &pos->player[pos->turn];
-	int trades[DESERT];
-	for (int resource = 0; resource < DESERT; resource++)
-		trades[resource] = player->resources[resource] / 4;
 
-	for (int brick = 0; brick <= trades[BRICK]; brick++) {
-	for (int lumber = 0; lumber <= trades[LUMBER]; lumber++) {
-	for (int ore = 0; ore <= trades[ORE]; ore++) {
-	for (int grain = 0; grain <= trades[GRAIN]; grain++) {
-	for (int wool = 0; wool <= trades[WOOL]; wool++) {
-		int total = brick + lumber + ore + grain + wool;
-		if (!total)
-			continue;
-		for (int ib = 0; ib <= total; ib++) {
-		for (int il = 0; il <= total - ib; il++) {
-		for (int io = 0; io <= total - ib - il; io++) {
-		for (int ig = 0; ig <= total - ib - il - io; ig++) {
-			int iw = total - ib - il - io - ig;
+	for (int resource = 0; resource < DESERT; resource++) {
+		if (player->resources[resource] >= 4) {
+			for (int r2 = 0; r2 < DESERT; r2++) {
+				/* Could possibly want to trade 4 for 1 if
+				 * we want to reduce the number of cards.
+				 * Let's allow it.
+				 */
+				struct move *move = add_move(moves, n);
+				memset(move->out, 0, sizeof(move->out));
+				memset(move->in, 0, sizeof(move->in));
 
-			struct move *move = add_move(moves, n);
+				move->out[resource] = 4;
 
-			move->out[BRICK] = 4 * brick;
-			move->out[LUMBER] = 4 * lumber;
-			move->out[ORE] = 4 * ore;
-			move->out[GRAIN] = 4 * grain;
-			move->out[WOOL] = 4 * wool;
+				move->in[r2] = 1;
 
-			move->in[BRICK] = ib;
-			move->in[LUMBER] = il;
-			move->in[ORE] = io;
-			move->in[GRAIN] = ig;
-			move->in[WOOL] = iw;
-
-			move->type = TRADE;
-			move->flip = 0;
+				move->type = TRADE;
+				move->flip = 0;
+			}
 		}
-		}
-		}
-		}
-	}
-	}
-	}
-	}
 	}
 }
 
@@ -1006,7 +984,7 @@ void move_to_str(struct move *move, char str[256]) {
 		i += sprintf(str + i, "end turn");
 	}
 	else if (move->type == RANDOM) {
-		i += sprintf(str + i, "random");
+		i += sprintf(str + i, "roll %d", move->number);
 	}
 	else if (move->type == DISCARD) {
 		i += sprintf(str + i, "discard");
