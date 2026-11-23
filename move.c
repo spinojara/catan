@@ -252,7 +252,6 @@ void generate_play(struct position *pos, struct move **moves, size_t *n) {
 		}
 	}
 
-	/* TODO: r, r1 = r1, r */
 	if (pos->player[pos->turn].development[ROADBUILDING] > pos->bought[ROADBUILDING] && pos->player[pos->turn].road <= 13) {
 		for (int r = 0; r < MAX_ROADS; r++) {
 			struct rtile *rtile = &pos->rtiles[r];
@@ -268,9 +267,21 @@ void generate_play(struct position *pos, struct move **moves, size_t *n) {
 				for (int i = 0; rtile->smtiles[i]; i++)
 					rtile->smtiles[i]->reachable[pos->turn]++;
 
+				/* Check. */
 				for (int r1 = 0; r1 < MAX_ROADS; r1++) {
 					struct rtile *rtile1 = &pos->rtiles[r1];
 					if (!rtile1->road && rtile1->reachable[pos->turn]) {
+
+						/* Dedup by ordering. */
+						int already_has = 0;
+						for (size_t i = 0; i < *n && !already_has; i++) {
+							if ((*moves)[i].type == PLAYROADBUILDING && (*moves)[i].rtile == rtile1 && (*moves)[i].rtile1 == rtile) {
+								already_has = 1;
+							}
+						}
+						if (already_has)
+							continue;
+
 						struct move *move = add_move(moves, n);
 						move->flip = 0;
 						move->type = PLAYROADBUILDING;
