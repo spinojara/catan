@@ -4,7 +4,7 @@
 #define TPPERSEC 1000000000l
 #define TPPERMS     1000000l
 
-double c = 1.41;
+double c = 0.54;
 
 int64_t time_now(void) {
 	struct timespec tp;
@@ -19,16 +19,29 @@ struct node {
 	int n;
 
 	char leaf;
+
+	/* Whether the node is known to be a win/loss. */
+	signed char proven;
 	size_t nmoves;
 	struct move *moves;
 	struct node *nodes;
 };
+
+int wins(const struct node *node, size_t i) {
+	int proven = node->nodes[i].proven;
+	return node->moves[i].flip ? proven == -1 : proven == 1;
+}
 
 int best_node(const struct node *node) {
 	size_t j = 0;
 	for (size_t i = 1; i < node->nmoves; i++)
 		if (node->nodes[i].n > node->nodes[j].n)
 			j = i;
+
+	/* If we have a winning node, then choose that one. */
+	for (size_t i = 0; i < node->nmoves; i++)
+		if (wins(node, i))
+			return i;
 
 	return j;
 }
@@ -357,7 +370,11 @@ int rollout(struct position *pos, uint64_t *seed, int ply) {
 
 int mcts_internal(struct position *pos, uint64_t *seed, struct node *node, int ply) {
 	int result;
-	if ((result = gameover(pos))) {
+	if (node->proven) {
+		result = node->proven;
+	}
+	else if ((result = gameover(pos))) {
+		node->proven = result;
 	}
 	else if (node->n == 0) {
 		node->type = generate(pos, &node->moves, &node->nmoves);
@@ -414,6 +431,15 @@ int mcts_internal(struct position *pos, uint64_t *seed, struct node *node, int p
 		else if (node->type == CHOICE) {
 			double value;
 			for (size_t i = 0; i < node->nmoves; i++) {
+				/* If we have a move that we know is winning, then choose that.
+				 * Additionally, then this node is also winning.
+				 */
+				if (wins(node, i)) {
+					node->proven = 1;
+					j = i;
+					break;
+				}
+
 				int n = node->nodes[i].n;
 				int w = node->nodes[i].w;
 				int N = node->n;
@@ -486,22 +512,20 @@ void mcts(struct position *pos, int maxtime, struct node **root, uint64_t *seed,
 		memcpy(&(*root)->moves[j + 1], &move, sizeof(move));
 	}
 
-	for (size_t i = 0; i < (*root)->nmoves; i++) {
-		struct node *node = &(*root)->nodes[i];
-		struct move *move = &(*root)->moves[i];
-
-		/* Win rate for the player choosing at the root. */
-		double q = (double)node->w / (2 * node->n);
-		if (move->flip)
-			q = 1.0 - q;
-
-		char str[256];
-		move_to_str(move, str);
-		fprintf(info, "move %s (%lf, %d)\n", str, q, node->n);
-		break;
-	}
-
+	/* Not always the most visited move, see best_node. */
 	int bn = best_node(*root);
+
+	struct node *node = &(*root)->nodes[bn];
+	struct move *move = &(*root)->moves[bn];
+
+	/* Win rate for the player choosing at the root. */
+	double q = (double)node->w / (2 * node->n);
+	if (move->flip)
+		q = 1.0 - q;
+
+	char str[256];
+	move_to_str(move, str);
+	fprintf(info, "move %s (%lf, %d)\n", str, q, node->n);
 
 	memcpy(return_move, &(*root)->moves[bn], sizeof(*return_move));
 
