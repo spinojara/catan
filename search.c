@@ -151,22 +151,17 @@ int rollout(struct position *pos, uint64_t *seed, int ply) {
 			}
 		}
 
-		/* Filter all roads if we can already reach somewhere.
-		 * Maybe allow building longest road, unless we are >= 3 ahead of
-		 * our opponent in this category.
-		 */
-		int has_reachable = 0;
-		for (int s = 0; s < MAX_SETTLEMENTS && !has_reachable; s++)
-			if (pos->smtiles[s].reachable[pos->turn] && !pos->smtiles[s].blocked && !pos->smtiles[s].city && !pos->smtiles[s].settlement)
-				has_reachable = 1;
-
-		if (has_reachable) {
-			for (size_t i = 0; i < n; i++) {
-				if (moves[i].type == BUILD && moves[i].building == ROAD) {
-					memcpy(&moves[i], &moves[n - 1], sizeof(moves[i]));
+		/* If we have a development card, then play it. */
+		for (size_t i = 0; i < n; i++) {
+			if (moves[i].type == PLAYKNIGHT || moves[i].type == PLAYROADBUILDING || moves[i].type == PLAYYEAROFPLENTY || moves[i].type == PLAYMONOPOLY) {
+				for (size_t j = 0; j < n; j++) {
+					if (moves[j].type == PLAYKNIGHT || moves[j].type == PLAYROADBUILDING || moves[j].type == PLAYYEAROFPLENTY || moves[j].type == PLAYMONOPOLY)
+						continue;
+					memcpy(&moves[j], &moves[n - 1], sizeof(moves[j]));
 					n--;
-					i--;
+					j--;
 				}
+				break;
 			}
 		}
 
@@ -182,6 +177,25 @@ int rollout(struct position *pos, uint64_t *seed, int ply) {
 		if (can_build_settlement_or_city) {
 			for (size_t i = 0; i < n; i++) {
 				if (moves[i].type != BUILD || !(moves[i].building == CITY || moves[i].building == SETTLEMENT)) {
+					memcpy(&moves[i], &moves[n - 1], sizeof(moves[i]));
+					n--;
+					i--;
+				}
+			}
+		}
+
+		/* Filter all roads if we can already reach somewhere.
+		 * Maybe allow building longest road, unless we are >= 3 ahead of
+		 * our opponent in this category.
+		 */
+		int has_reachable = 0;
+		for (int s = 0; s < MAX_SETTLEMENTS && !has_reachable; s++)
+			if (pos->smtiles[s].reachable[pos->turn] && !pos->smtiles[s].blocked && !pos->smtiles[s].city && !pos->smtiles[s].settlement)
+				has_reachable = 1;
+
+		if (has_reachable) {
+			for (size_t i = 0; i < n; i++) {
+				if (moves[i].type == BUILD && moves[i].building == ROAD) {
 					memcpy(&moves[i], &moves[n - 1], sizeof(moves[i]));
 					n--;
 					i--;
